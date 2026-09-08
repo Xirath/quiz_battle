@@ -24,3 +24,7 @@ Single-context layout (`CONTEXT.md` and `docs/adr/` at root). See `docs/agents/d
 ### Naming Conventions
 - **Files and directories**: Follow Next.js conventions and use lowercase `kebab-case` for all file and directory names (e.g., `user-profile.tsx`, `game-room.ts`, `open-tdb-client.ts`). Framework routing files follow Next.js conventions (`page.tsx`, `layout.tsx`, `route.ts`). Tooling and configuration files are exempt from this convention (e.g., `next.config.ts`, `postcss.config.mjs`, `eslint.config.mjs`, `tsconfig.json`).
 - **Component identifiers**: Use `PascalCase` for React component functions, types, and exports (e.g., `UserProfile`, `ScoreBoard`, `BattleArena`).
+
+### Styling & Design System
+- **CSS variables as single source of truth**: Define all colors, fonts, themes, and accents as semantic CSS variables in `app/globals.css` and map them through `@theme inline`.
+- **Semantic theme tokens over hardcoded values**: Components must consume semantic CSS variables and theme utility classes (e.g., `bg-background`, `text-foreground`, `bg-card`, `bg-primary`, `text-primary-foreground`, `bg-accent`, `text-accent-foreground`, `border-border`, `bg-success`, `bg-destructive`) instead of hardcoded hex values, raw RGBs, or un-themed arbitrary palette classes.
