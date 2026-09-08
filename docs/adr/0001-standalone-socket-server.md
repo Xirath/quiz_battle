@@ -1,0 +1,3 @@
+# Standalone Socket.io Server Architecture
+
+We decided to run a dedicated standalone Node.js Socket.io server alongside the Next.js frontend application rather than embedding WebSockets into a custom Next.js server or using a third-party managed BaaS. Next.js App Router serverless environments do not support persistent stateful WebSockets, and custom Next.js servers disable internal build optimizations while causing hot-reloading instability during local multiplayer testing. The standalone server provides full in-memory control over room lifecycles and question countdown timers while keeping Next.js focused on UI rendering and authentication.
