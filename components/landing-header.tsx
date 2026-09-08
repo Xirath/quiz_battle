@@ -1,6 +1,7 @@
 import Image from "next/image";
 import { auth } from "@/auth";
 import { SignInButton, SignOutButton } from "@/components/auth-buttons";
+import { ConnectionStatusBadge } from "@/components/connection-status";
 
 export async function LandingHeader() {
   const session = await auth();
@@ -27,6 +28,7 @@ export async function LandingHeader() {
 
         {/* Auth / Profile Area */}
         <div className="flex items-center gap-3">
+          <ConnectionStatusBadge />
           {user ? (
             <div className="flex flex-wrap items-center gap-3 sm:gap-4">
               {/* Stats Counters */}
