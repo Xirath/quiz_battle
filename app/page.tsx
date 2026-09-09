@@ -1,6 +1,7 @@
 import { LandingHeader } from "@/components/landing-header";
 import { auth } from "@/auth";
 import { SignInButton } from "@/components/auth-buttons";
+import { RoomActions } from "@/components/room-actions";
 
 export default async function Home() {
   const session = await auth();
@@ -10,8 +11,8 @@ export default async function Home() {
     <div className="flex min-h-screen flex-col bg-background text-foreground font-sans">
       <LandingHeader />
 
-      <main className="flex flex-1 flex-col items-center justify-center px-4 py-16 text-center sm:px-6 sm:py-24">
-        <div className="mx-auto max-w-2xl space-y-6">
+      <main className="flex flex-1 flex-col items-center justify-center px-4 py-12 text-center sm:px-6 sm:py-16">
+        <div className="mx-auto flex max-w-2xl flex-col items-center space-y-6">
           <div className="inline-flex items-center gap-2 rounded-full border border-border bg-card px-3 py-1 text-xs font-semibold text-accent shadow-xs">
             <span>⚔️</span> Real-Time 1v1 Trivia Battle
           </div>
@@ -26,17 +27,13 @@ export default async function Home() {
             synced questions, and competitive lifetime records.
           </p>
 
-          <div className="flex flex-col items-center justify-center gap-3 pt-4 sm:flex-row">
+          <div className="flex w-full justify-center pt-2">
             {user ? (
-              <div className="flex flex-col items-center gap-2">
-                <span className="rounded-lg border border-border bg-card px-6 py-3 font-semibold text-foreground shadow-sm">
-                  Welcome back, <span className="text-primary">{user.name}</span>! Ready for battle.
-                </span>
-              </div>
+              <RoomActions />
             ) : (
               <SignInButton
                 provider="google"
-                className="px-6 py-3 text-base shadow-md"
+                className="px-8 py-3.5 text-base shadow-md"
               >
                 Sign in to Battle
               </SignInButton>
