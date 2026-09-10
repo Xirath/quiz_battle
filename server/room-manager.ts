@@ -121,6 +121,24 @@ export class RoomManager {
     this.matches.delete(normalizedCode);
   }
 
+  private createInitialMatchState(
+    roomCode: string,
+    questions: MatchQuestion[]
+  ): MatchState {
+    return {
+      roomCode,
+      questions: [...questions],
+      currentRoundNumber: 1,
+      hostScore: 0,
+      challengerScore: 0,
+      status: "countdown",
+      countdownSeconds: 3,
+      isSuddenDeath: false,
+      winnerId: null,
+      rematchRequests: new Set<string>(),
+    };
+  }
+
   public startMatch(code: string, questions: MatchQuestion[]): MatchState {
     const normalizedCode = code.toUpperCase().trim();
     const room = this.rooms.get(normalizedCode);
@@ -130,16 +148,7 @@ export class RoomManager {
 
     room.status = "in_match";
 
-    const match: MatchState = {
-      roomCode: normalizedCode,
-      questions: [...questions],
-      currentRoundNumber: 1,
-      hostScore: 0,
-      challengerScore: 0,
-      status: "countdown",
-      countdownSeconds: 3,
-    };
-
+    const match = this.createInitialMatchState(normalizedCode, questions);
     this.matches.set(normalizedCode, match);
     return { ...match };
   }
@@ -219,8 +228,9 @@ export class RoomManager {
 
   public evaluateRound(code: string): RoundResultPayload | null {
     const normalizedCode = code.toUpperCase().trim();
+    const room = this.rooms.get(normalizedCode);
     const match = this.matches.get(normalizedCode);
-    if (!match) return null;
+    if (!room || !match) return null;
 
     const currentQuestion = match.questions[match.currentRoundNumber - 1];
     if (!currentQuestion) return null;
@@ -239,7 +249,36 @@ export class RoomManager {
       match.challengerScore += 1;
     }
 
-    match.status = "ROUND_RESULT";
+    let matchEnded = false;
+
+    if (!match.isSuddenDeath) {
+      // Normal Race to 6
+      if (match.hostScore >= 6 && match.challengerScore >= 6) {
+        // Both reached 6 on the same round -> Trigger Sudden Death Overtime!
+        match.isSuddenDeath = true;
+        match.status = "ROUND_RESULT";
+      } else if (match.hostScore >= 6 && match.hostScore > match.challengerScore) {
+        match.status = "match_ended";
+        match.winnerId = room.host.id;
+        matchEnded = true;
+      } else if (match.challengerScore >= 6 && match.challengerScore > match.hostScore) {
+        match.status = "match_ended";
+        match.winnerId = room.challenger?.id ?? null;
+        matchEnded = true;
+      } else {
+        match.status = "ROUND_RESULT";
+      }
+    } else {
+      // In Sudden Death Overtime: 1-question rounds until scores diverge
+      if (match.hostScore !== match.challengerScore) {
+        match.status = "match_ended";
+        match.winnerId = match.hostScore > match.challengerScore ? room.host.id : (room.challenger?.id ?? null);
+        matchEnded = true;
+      } else {
+        // Scores still tied (e.g. 7-7 or 6-6) -> Continue Sudden Death
+        match.status = "ROUND_RESULT";
+      }
+    }
 
     return {
       roundNumber: match.currentRoundNumber,
@@ -250,6 +289,9 @@ export class RoomManager {
       challengerCorrect,
       hostScore: match.hostScore,
       challengerScore: match.challengerScore,
+      isSuddenDeath: match.isSuddenDeath,
+      matchEnded,
+      winnerId: match.winnerId ?? null,
     };
   }
 
@@ -258,7 +300,7 @@ export class RoomManager {
   ): { roundNumber: number; question: MatchQuestion } | null {
     const normalizedCode = code.toUpperCase().trim();
     const match = this.matches.get(normalizedCode);
-    if (!match) return null;
+    if (!match || match.status === "match_ended") return null;
 
     const nextRoundNumber = match.currentRoundNumber + 1;
     const nextQuestion = match.questions[nextRoundNumber - 1];
@@ -270,6 +312,68 @@ export class RoomManager {
       roundNumber: nextRoundNumber,
       question: { ...nextQuestion },
     };
+  }
+
+  public addQuestions(code: string, newQuestions: MatchQuestion[]): void {
+    const normalizedCode = code.toUpperCase().trim();
+    const match = this.matches.get(normalizedCode);
+    if (match) {
+      match.questions.push(...newQuestions);
+    }
+  }
+
+  public requestRematch(
+    code: string,
+    playerId: string
+  ): { requestedBy: string[]; bothReady: boolean } {
+    const normalizedCode = code.toUpperCase().trim();
+    const room = this.rooms.get(normalizedCode);
+    const match = this.matches.get(normalizedCode);
+    if (!room || !match) {
+      throw new Error("Match not found");
+    }
+
+    if (!match.rematchRequests) {
+      match.rematchRequests = new Set<string>();
+    }
+
+    match.rematchRequests.add(playerId);
+
+    const requestedBy = Array.from(match.rematchRequests);
+    const hostReady = match.rematchRequests.has(room.host.id);
+    const challengerReady = room.challenger ? match.rematchRequests.has(room.challenger.id) : false;
+    const bothReady = hostReady && challengerReady;
+
+    return { requestedBy, bothReady };
+  }
+
+  public resetForRematch(code: string, questions: MatchQuestion[]): MatchState {
+    const normalizedCode = code.toUpperCase().trim();
+    const room = this.rooms.get(normalizedCode);
+    if (!room) {
+      throw new Error("Room not found");
+    }
+
+    room.status = "in_match";
+
+    const match = this.createInitialMatchState(normalizedCode, questions);
+    this.matches.set(normalizedCode, match);
+    return { ...match };
+  }
+
+  public setMatchScoresForTesting(
+    code: string,
+    hostScore: number,
+    challengerScore: number,
+    isSuddenDeath = false
+  ): void {
+    const normalizedCode = code.toUpperCase().trim();
+    const match = this.matches.get(normalizedCode);
+    if (match) {
+      match.hostScore = hostScore;
+      match.challengerScore = challengerScore;
+      match.isSuddenDeath = isSuddenDeath;
+    }
   }
 
   public getMatch(code: string): MatchState | null {

@@ -4,10 +4,12 @@ import { Server as SocketIOServer } from "socket.io";
 import { createAuthMiddleware } from "./auth-middleware";
 import { RoomManager, defaultRoomManager } from "./room-manager";
 import { OpenTdbClient, defaultOpenTdbClient } from "./open-tdb-client";
+import { recordMatchResult, type RecordMatchParams } from "@/lib/match-service";
 import type {
   ClientToServerEvents,
   ServerToClientEvents,
   SocketData,
+  MatchEndPayload,
 } from "./types";
 
 export interface GameServerOptions {
@@ -20,6 +22,7 @@ export interface GameServerOptions {
   roundDurationMs?: number;
   earlyRevealDebounceMs?: number;
   roundRevealDurationMs?: number;
+  onMatchEnd?: (params: RecordMatchParams) => Promise<unknown> | void;
 }
 
 export function createGameServer(options: GameServerOptions = {}) {
@@ -71,15 +74,82 @@ export function createGameServer(options: GameServerOptions = {}) {
   // Attach handshake authentication middleware
   io.use(createAuthMiddleware(options.secret));
 
-  const triggerRoundResult = (roomCode: string) => {
+  const triggerRoundResult = async (roomCode: string) => {
     clearRoomTimers(roomCode);
     const result = roomManager.evaluateRound(roomCode);
     if (!result) return;
 
     io.to(`room:${roomCode}`).emit("round:result", result);
 
-    const revealTimer = setTimeout(() => {
-      const next = roomManager.nextRound(roomCode);
+    if (result.matchEnded) {
+      const room = roomManager.getRoom(roomCode);
+      const winnerName =
+        result.winnerId === room?.host.id
+          ? (room?.host.name ?? "Host")
+          : result.winnerId === room?.challenger?.id
+          ? (room?.challenger?.name ?? "Challenger")
+          : null;
+
+      const endPayload: MatchEndPayload = {
+        roomCode,
+        winnerId: result.winnerId ?? null,
+        winnerName,
+        hostScore: result.hostScore,
+        challengerScore: result.challengerScore,
+        roundsPlayed: result.roundNumber,
+        isSuddenDeath: result.isSuddenDeath,
+      };
+
+      io.to(`room:${roomCode}`).emit("match:end", endPayload);
+
+      if (room && room.challenger) {
+        try {
+          if (options.onMatchEnd) {
+            await options.onMatchEnd({
+              roomCode,
+              hostId: room.host.id,
+              challengerId: room.challenger.id,
+              winnerId: result.winnerId ?? null,
+              hostScore: result.hostScore,
+              challengerScore: result.challengerScore,
+              roundsPlayed: result.roundNumber,
+              isSuddenDeath: result.isSuddenDeath,
+            });
+          } else {
+            await recordMatchResult({
+              roomCode,
+              hostId: room.host.id,
+              challengerId: room.challenger.id,
+              winnerId: result.winnerId ?? null,
+              hostScore: result.hostScore,
+              challengerScore: result.challengerScore,
+              roundsPlayed: result.roundNumber,
+              isSuddenDeath: result.isSuddenDeath,
+            });
+          }
+        } catch (err) {
+          if (process.env.NODE_ENV !== "test") {
+            console.error(`[GameServer] Failed to persist match result for room ${roomCode}:`, err);
+          }
+        }
+      }
+      return;
+    }
+
+    const revealTimer = setTimeout(async () => {
+      let next = roomManager.nextRound(roomCode);
+      if (!next) {
+        // Prolonged sudden death: fetch more questions
+        try {
+          const extraQuestions = await openTdbClient.fetchQuestions(10);
+          roomManager.addQuestions(roomCode, extraQuestions);
+          next = roomManager.nextRound(roomCode);
+        } catch (e) {
+          if (process.env.NODE_ENV !== "test") {
+            console.error(`[GameServer] Failed to fetch extra questions for sudden death:`, e);
+          }
+        }
+      }
       if (next) {
         startRound(roomCode, next.roundNumber);
       }
@@ -101,6 +171,7 @@ export function createGameServer(options: GameServerOptions = {}) {
       hostScore: match.hostScore,
       challengerScore: match.challengerScore,
       startTime: match.roundStartTime,
+      isSuddenDeath: match.isSuddenDeath,
     });
 
     const expirationTimer = setTimeout(() => {
@@ -110,10 +181,13 @@ export function createGameServer(options: GameServerOptions = {}) {
     activeTimers.set(roomCode, [expirationTimer]);
   };
 
-  const startMatchSequence = (roomCode: string) => {
+  const startMatchSequence = (roomCode: string, isRematch = false) => {
     clearRoomTimers(roomCode);
     const room = roomManager.getRoom(roomCode);
-    if (!room || room.status !== "ready" || !room.challenger) {
+    if (!room || !room.challenger) {
+      return;
+    }
+    if (!isRematch && room.status !== "ready") {
       return;
     }
 
@@ -147,7 +221,11 @@ export function createGameServer(options: GameServerOptions = {}) {
         }
 
         const questions = await questionsPromise;
-        roomManager.startMatch(roomCode, questions);
+        if (isRematch) {
+          roomManager.resetForRematch(roomCode, questions);
+        } else {
+          roomManager.startMatch(roomCode, questions);
+        }
 
         const updatedRoom = roomManager.getRoom(roomCode);
         if (updatedRoom) {
@@ -269,6 +347,33 @@ export function createGameServer(options: GameServerOptions = {}) {
         }
       } catch (err) {
         const message = err instanceof Error ? err.message : "Failed to submit answer";
+        if (typeof callback === "function") {
+          callback({ success: false, error: message });
+        }
+        socket.emit("room:error", { message });
+      }
+    });
+
+    socket.on("match:play_again", (data, callback) => {
+      try {
+        const roomCode = data?.roomCode || socket.data.roomCode;
+        if (!roomCode) {
+          throw new Error("Room code is required");
+        }
+
+        const { requestedBy, bothReady } = roomManager.requestRematch(roomCode, user.id);
+
+        if (typeof callback === "function") {
+          callback({ success: true });
+        }
+
+        io.to(`room:${roomCode}`).emit("match:rematch_status", { requestedBy });
+
+        if (bothReady) {
+          startMatchSequence(roomCode, true);
+        }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Failed to request rematch";
         if (typeof callback === "function") {
           callback({ success: false, error: message });
         }

@@ -1,0 +1,214 @@
+"use client";
+
+import Image from "next/image";
+import type { AuthenticatedUser, RoomState, MatchEndPayload } from "@/server/types";
+import { NeonStar } from "./neon-star";
+
+export interface MatchResultModalProps {
+  room: RoomState;
+  currentUser: AuthenticatedUser;
+  matchEnd: MatchEndPayload;
+  rematchRequestedBy?: string[];
+  onPlayAgain?: () => void;
+  onLeaveRoom?: () => void;
+}
+
+export function MatchResultModal({
+  room,
+  currentUser,
+  matchEnd,
+  rematchRequestedBy = [],
+  onPlayAgain,
+  onLeaveRoom,
+}: MatchResultModalProps) {
+  const isWinner = matchEnd.winnerId === currentUser.id;
+  const isHost = room.host.id === currentUser.id;
+  const opponent = isHost ? room.challenger : room.host;
+  const iRequestedRematch = rematchRequestedBy.includes(currentUser.id);
+  const opponentRequestedRematch = opponent ? rematchRequestedBy.includes(opponent.id) : false;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/85 p-4 backdrop-blur-md animate-in fade-in duration-300">
+      <div className="relative w-full max-w-xl overflow-hidden rounded-3xl border-2 border-border bg-card p-6 shadow-2xl sm:p-8 space-y-6">
+        {/* Glow Header Banner */}
+        <div className="text-center space-y-2">
+          <div className="inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-xs font-black uppercase tracking-widest bg-muted border border-border">
+            <span>⚔️</span>
+            <span>Match Conclusion</span>
+            {matchEnd.isSuddenDeath && (
+              <span className="text-destructive font-black">• Sudden Death</span>
+            )}
+          </div>
+
+          <div className="py-2">
+            <h1
+              className={`text-5xl font-black tracking-tight drop-shadow-md sm:text-6xl ${
+                isWinner
+                  ? "text-primary drop-shadow-[0_0_24px_var(--primary)] animate-bounce"
+                  : "text-muted-foreground"
+              }`}
+            >
+              {isWinner ? "🏆 VICTORY!" : "DEFEAT"}
+            </h1>
+            <p className="text-sm font-bold text-muted-foreground pt-1">
+              {isWinner
+                ? "You emerged triumphant in the battle arena!"
+                : `${matchEnd.winnerName ?? "Opponent"} took the victory!`}
+            </p>
+          </div>
+        </div>
+
+        {/* Final Scoreboard Card */}
+        <div className="grid grid-cols-2 gap-4 rounded-2xl border border-border bg-muted/30 p-5 shadow-inner">
+          {/* Host Final Summary */}
+          <div
+            className={`flex flex-col items-center justify-center rounded-xl p-4 text-center space-y-3 transition-all ${
+              matchEnd.winnerId === room.host.id
+                ? "border-2 border-primary/60 bg-primary/10 shadow-md ring-2 ring-primary/20"
+                : "border border-border/60 bg-card/60"
+            }`}
+          >
+            <div className="relative flex h-16 w-16 items-center justify-center rounded-full border-2 border-primary bg-muted">
+              {room.host.image ? (
+                <Image
+                  src={room.host.image}
+                  alt={room.host.name ?? "Host"}
+                  width={64}
+                  height={64}
+                  className="h-full w-full rounded-full object-cover"
+                  unoptimized
+                />
+              ) : (
+                <span className="text-xl font-bold text-foreground">
+                  {(room.host.name ?? "H").charAt(0).toUpperCase()}
+                </span>
+              )}
+              {matchEnd.winnerId === room.host.id && (
+                <span className="absolute -top-2 -right-2 text-xl drop-shadow">👑</span>
+              )}
+            </div>
+
+            <div>
+              <p className="truncate text-sm font-bold text-foreground">
+                {room.host.name ?? "Host"}
+              </p>
+              <p className="text-[11px] font-semibold text-muted-foreground">
+                {isHost ? "You" : "Opponent"}
+              </p>
+            </div>
+
+            <div className="flex items-center gap-1">
+              {[...Array(6)].map((_, i) => (
+                <NeonStar
+                  key={`host-final-star-${i}`}
+                  filled={i < matchEnd.hostScore}
+                  variant="primary"
+                  size="lg"
+                />
+              ))}
+            </div>
+
+            <div className="font-mono text-2xl font-black text-primary">
+              {matchEnd.hostScore}{" "}
+              <span className="text-xs font-semibold text-muted-foreground font-sans">
+                Score
+              </span>
+            </div>
+          </div>
+
+          {/* Challenger Final Summary */}
+          <div
+            className={`flex flex-col items-center justify-center rounded-xl p-4 text-center space-y-3 transition-all ${
+              matchEnd.winnerId === room.challenger?.id
+                ? "border-2 border-accent/60 bg-accent/10 shadow-md ring-2 ring-accent/20"
+                : "border border-border/60 bg-card/60"
+            }`}
+          >
+            <div className="relative flex h-16 w-16 items-center justify-center rounded-full border-2 border-accent bg-muted">
+              {room.challenger?.image ? (
+                <Image
+                  src={room.challenger.image}
+                  alt={room.challenger.name ?? "Challenger"}
+                  width={64}
+                  height={64}
+                  className="h-full w-full rounded-full object-cover"
+                  unoptimized
+                />
+              ) : (
+                <span className="text-xl font-bold text-foreground">
+                  {(room.challenger?.name ?? "C").charAt(0).toUpperCase()}
+                </span>
+              )}
+              {matchEnd.winnerId === room.challenger?.id && (
+                <span className="absolute -top-2 -right-2 text-xl drop-shadow">👑</span>
+              )}
+            </div>
+
+            <div>
+              <p className="truncate text-sm font-bold text-foreground">
+                {room.challenger?.name ?? "Challenger"}
+              </p>
+              <p className="text-[11px] font-semibold text-muted-foreground">
+                {!isHost ? "You" : "Opponent"}
+              </p>
+            </div>
+
+            <div className="flex items-center gap-1">
+              {[...Array(6)].map((_, i) => (
+                <NeonStar
+                  key={`challenger-final-star-${i}`}
+                  filled={i < matchEnd.challengerScore}
+                  variant="accent"
+                  size="lg"
+                />
+              ))}
+            </div>
+
+            <div className="font-mono text-2xl font-black text-accent">
+              {matchEnd.challengerScore}{" "}
+              <span className="text-xs font-semibold text-muted-foreground font-sans">
+                Score
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* Rematch Status Notice */}
+        {opponentRequestedRematch && !iRequestedRematch && (
+          <div className="flex items-center justify-center gap-2 rounded-xl border border-accent/50 bg-accent/15 p-3 text-center text-sm font-bold text-accent animate-pulse">
+            <span>⚡</span>
+            <span>{opponent?.name ?? "Opponent"} wants a rematch! Click Play Again to start!</span>
+          </div>
+        )}
+
+        {iRequestedRematch && !opponentRequestedRematch && (
+          <div className="flex items-center justify-center gap-2 rounded-xl border border-primary/50 bg-primary/10 p-3 text-center text-sm font-bold text-primary">
+            <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+            <span>Rematch requested! Waiting for {opponent?.name ?? "opponent"} to accept...</span>
+          </div>
+        )}
+
+        {/* Action Buttons */}
+        <div className="flex flex-col gap-3 pt-2 sm:flex-row">
+          <button
+            type="button"
+            onClick={onPlayAgain}
+            disabled={iRequestedRematch}
+            className="flex-1 cursor-pointer rounded-xl bg-primary py-3.5 px-6 text-center text-sm font-extrabold text-primary-foreground shadow-lg transition-all hover:opacity-90 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60 flex items-center justify-center gap-2"
+          >
+            <span>🔄</span>
+            <span>{iRequestedRematch ? "Waiting for Opponent..." : "Play Again (Rematch)"}</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={onLeaveRoom}
+            className="cursor-pointer rounded-xl border border-border bg-secondary py-3.5 px-6 text-center text-sm font-bold text-secondary-foreground transition-colors hover:bg-secondary-hover active:scale-[0.98]"
+          >
+            Leave Match
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}

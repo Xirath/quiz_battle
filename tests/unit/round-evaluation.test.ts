@@ -138,4 +138,101 @@ describe("RoomManager - Round Evaluation & Answer Submissions", () => {
     expect(match?.hostAnswer).toBeNull();
     expect(match?.challengerAnswer).toBeNull();
   });
+
+  it("concludes match when a player reaches 6 Score ahead of opponent", () => {
+    // Simulate host at 5, challenger at 4
+    roomManager.setMatchScoresForTesting(roomCode, 5, 4);
+
+    roomManager.startRound(roomCode, 1);
+    roomManager.submitAnswer(roomCode, host.id, 1, "Water");
+    roomManager.submitAnswer(roomCode, challenger.id, 1, "Oxygen");
+
+    const result = roomManager.evaluateRound(roomCode);
+    expect(result?.hostScore).toBe(6);
+    expect(result?.challengerScore).toBe(4);
+    expect(result?.matchEnded).toBe(true);
+    expect(result?.winnerId).toBe(host.id);
+    expect(result?.isSuddenDeath).toBe(false);
+
+    const matchAfter = roomManager.getMatch(roomCode);
+    expect(matchAfter?.status).toBe("match_ended");
+    expect(matchAfter?.winnerId).toBe(host.id);
+
+    // nextRound should return null when match has ended
+    expect(roomManager.nextRound(roomCode)).toBeNull();
+  });
+
+  it("initiates Sudden Death Overtime when both players reach 6 Score on the same round", () => {
+    // Both at 5
+    roomManager.setMatchScoresForTesting(roomCode, 5, 5);
+
+    roomManager.startRound(roomCode, 1);
+    roomManager.submitAnswer(roomCode, host.id, 1, "Water");
+    roomManager.submitAnswer(roomCode, challenger.id, 1, "Water");
+
+    const result = roomManager.evaluateRound(roomCode);
+    expect(result?.hostScore).toBe(6);
+    expect(result?.challengerScore).toBe(6);
+    expect(result?.isSuddenDeath).toBe(true);
+    expect(result?.matchEnded).toBe(false);
+
+    const matchAfter = roomManager.getMatch(roomCode);
+    expect(matchAfter?.status).toBe("ROUND_RESULT");
+    expect(matchAfter?.isSuddenDeath).toBe(true);
+  });
+
+  it("continues Sudden Death Overtime when scores remain tied (e.g. 7-7)", () => {
+    roomManager.setMatchScoresForTesting(roomCode, 6, 6, true);
+
+    roomManager.startRound(roomCode, 1);
+    roomManager.submitAnswer(roomCode, host.id, 1, "Water");
+    roomManager.submitAnswer(roomCode, challenger.id, 1, "Water");
+
+    const result = roomManager.evaluateRound(roomCode);
+    expect(result?.hostScore).toBe(7);
+    expect(result?.challengerScore).toBe(7);
+    expect(result?.isSuddenDeath).toBe(true);
+    expect(result?.matchEnded).toBe(false);
+  });
+
+  it("resolves Sudden Death Overtime as soon as scores diverge (e.g. 7-6)", () => {
+    roomManager.setMatchScoresForTesting(roomCode, 6, 6, true);
+
+    roomManager.startRound(roomCode, 1);
+    roomManager.submitAnswer(roomCode, host.id, 1, "Water"); // correct
+    roomManager.submitAnswer(roomCode, challenger.id, 1, "Oxygen"); // incorrect
+
+    const result = roomManager.evaluateRound(roomCode);
+    expect(result?.hostScore).toBe(7);
+    expect(result?.challengerScore).toBe(6);
+    expect(result?.isSuddenDeath).toBe(true);
+    expect(result?.matchEnded).toBe(true);
+    expect(result?.winnerId).toBe(host.id);
+
+    const matchAfter = roomManager.getMatch(roomCode);
+    expect(matchAfter?.status).toBe("match_ended");
+    expect(matchAfter?.winnerId).toBe(host.id);
+  });
+
+  it("handles rematch requests and room reset", () => {
+    const match = roomManager.getMatch(roomCode)!;
+    match.status = "match_ended";
+
+    const hostReq = roomManager.requestRematch(roomCode, host.id);
+    expect(hostReq.requestedBy).toContain(host.id);
+    expect(hostReq.bothReady).toBe(false);
+
+    const challengerReq = roomManager.requestRematch(roomCode, challenger.id);
+    expect(challengerReq.requestedBy).toContain(host.id);
+    expect(challengerReq.requestedBy).toContain(challenger.id);
+    expect(challengerReq.bothReady).toBe(true);
+
+    const resetMatch = roomManager.resetForRematch(roomCode, sampleQuestions);
+    expect(resetMatch.hostScore).toBe(0);
+    expect(resetMatch.challengerScore).toBe(0);
+    expect(resetMatch.currentRoundNumber).toBe(1);
+    expect(resetMatch.status).toBe("countdown");
+    expect(resetMatch.isSuddenDeath).toBe(false);
+    expect(resetMatch.winnerId).toBeNull();
+  });
 });

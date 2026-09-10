@@ -22,8 +22,30 @@ model User {
   totalMatches        Int       @default(0)
   totalCorrectAnswers Int       @default(0)
 
+  // Matches relations
+  hostMatches         Match[]   @relation("HostMatches")
+  challengerMatches   Match[]   @relation("ChallengerMatches")
+  wonMatches          Match[]   @relation("WonMatches")
+
   createdAt           DateTime  @default(now())
   updatedAt           DateTime  @updatedAt
+}
+
+model Match {
+  id              String   @id @default(cuid())
+  roomCode        String
+  hostId          String
+  challengerId    String
+  winnerId        String?
+  hostScore       Int
+  challengerScore Int
+  roundsPlayed    Int      @default(1)
+  isSuddenDeath   Boolean  @default(false)
+  createdAt       DateTime @default(now())
+
+  host       User  @relation("HostMatches", fields: [hostId], references: [id], onDelete: Cascade)
+  challenger User  @relation("ChallengerMatches", fields: [challengerId], references: [id], onDelete: Cascade)
+  winner     User? @relation("WonMatches", fields: [winnerId], references: [id], onDelete: SetNull)
 }
 
 model Account {

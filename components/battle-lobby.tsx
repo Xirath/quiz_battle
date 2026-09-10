@@ -12,8 +12,10 @@ import type {
   AuthenticatedUser,
   ClientQuestion,
   RoundResultPayload,
+  MatchEndPayload,
 } from "@/server/types";
 import { BattleArena } from "./battle-arena";
+import { MatchResultModal } from "./match-result-modal";
 
 export function BattleLobby({
   roomId,
@@ -36,6 +38,9 @@ export function BattleLobby({
   const [selectedOption, setSelectedOption] = useState<string | null>(null);
   const [opponentLockedIn, setOpponentLockedIn] = useState(false);
   const [roundResult, setRoundResult] = useState<RoundResultPayload | null>(null);
+  const [isSuddenDeath, setIsSuddenDeath] = useState(false);
+  const [matchEnd, setMatchEnd] = useState<MatchEndPayload | null>(null);
+  const [rematchRequestedBy, setRematchRequestedBy] = useState<string[]>([]);
   const socketRef = useRef<Socket<ServerToClientEvents, ClientToServerEvents> | null>(null);
 
   useEffect(() => {
@@ -79,6 +84,8 @@ export function BattleLobby({
       setActiveQuestion(null);
       setRoundResult(null);
       setOpponentLockedIn(false);
+      setMatchEnd(null);
+      setRematchRequestedBy([]);
     });
 
     socket.on("room:error", (data) => {
@@ -87,6 +94,8 @@ export function BattleLobby({
 
     socket.on("match:countdown", (data) => {
       setCountdown(data);
+      setMatchEnd(null);
+      setRematchRequestedBy([]);
     });
 
     socket.on("round:start", (data) => {
@@ -97,6 +106,8 @@ export function BattleLobby({
       setSelectedOption(null);
       setOpponentLockedIn(false);
       setRoundResult(null);
+      setIsSuddenDeath(Boolean(data.isSuddenDeath));
+      setMatchEnd(null);
       if (data.hostScore !== undefined) setHostScore(data.hostScore);
       if (data.challengerScore !== undefined) setChallengerScore(data.challengerScore);
     });
@@ -111,6 +122,17 @@ export function BattleLobby({
       setRoundResult(data);
       setHostScore(data.hostScore);
       setChallengerScore(data.challengerScore);
+      if (data.isSuddenDeath !== undefined) {
+        setIsSuddenDeath(data.isSuddenDeath);
+      }
+    });
+
+    socket.on("match:end", (data) => {
+      setMatchEnd(data);
+    });
+
+    socket.on("match:rematch_status", (data) => {
+      setRematchRequestedBy(data.requestedBy);
     });
 
     socket.on("connect_error", (err) => {
@@ -161,6 +183,16 @@ export function BattleLobby({
     }
   };
 
+  const handlePlayAgain = () => {
+    if (socketRef.current) {
+      socketRef.current.emit("match:play_again", { roomCode: roomId }, (res) => {
+        if (!res?.success && res?.error) {
+          setError(res.error);
+        }
+      });
+    }
+  };
+
   const handleLeave = () => {
     if (socketRef.current) {
       socketRef.current.emit("room:leave", { code: roomId });
@@ -202,21 +234,34 @@ export function BattleLobby({
   // Active Battle Arena view once Round 1 has started
   if (activeQuestion) {
     return (
-      <BattleArena
-        key={`${room.code}-round-${roundNumber}`}
-        room={room}
-        currentUser={currentUser}
-        question={activeQuestion}
-        roundNumber={roundNumber}
-        hostScore={hostScore}
-        challengerScore={challengerScore}
-        startTime={roundStartTime}
-        selectedOption={selectedOption}
-        opponentLockedIn={opponentLockedIn}
-        roundResult={roundResult}
-        onSelectOption={handleSelectOption}
-        onLeaveRoom={handleLeave}
-      />
+      <>
+        <BattleArena
+          key={`${room.code}-round-${roundNumber}`}
+          room={room}
+          currentUser={currentUser}
+          question={activeQuestion}
+          roundNumber={roundNumber}
+          hostScore={hostScore}
+          challengerScore={challengerScore}
+          startTime={roundStartTime}
+          selectedOption={selectedOption}
+          opponentLockedIn={opponentLockedIn}
+          roundResult={roundResult}
+          isSuddenDeath={isSuddenDeath}
+          onSelectOption={handleSelectOption}
+          onLeaveRoom={handleLeave}
+        />
+        {matchEnd && (
+          <MatchResultModal
+            room={room}
+            currentUser={currentUser}
+            matchEnd={matchEnd}
+            rematchRequestedBy={rematchRequestedBy}
+            onPlayAgain={handlePlayAgain}
+            onLeaveRoom={handleLeave}
+          />
+        )}
+      </>
     );
   }
 

@@ -41,6 +41,9 @@ export interface MatchState {
   hostAnswer?: string | null;
   challengerAnswer?: string | null;
   roundStartTime?: number;
+  isSuddenDeath: boolean;
+  winnerId?: string | null;
+  rematchRequests?: Set<string>;
 }
 
 export interface RoundResultPayload {
@@ -52,6 +55,19 @@ export interface RoundResultPayload {
   challengerCorrect: boolean;
   hostScore: number;
   challengerScore: number;
+  isSuddenDeath: boolean;
+  matchEnded: boolean;
+  winnerId?: string | null;
+}
+
+export interface MatchEndPayload {
+  roomCode: string;
+  winnerId: string | null;
+  winnerName: string | null;
+  hostScore: number;
+  challengerScore: number;
+  roundsPlayed: number;
+  isSuddenDeath: boolean;
 }
 
 export interface SocketData {
@@ -73,9 +89,12 @@ export interface ServerToClientEvents {
     hostScore?: number;
     challengerScore?: number;
     startTime?: number;
+    isSuddenDeath?: boolean;
   }) => void;
   "player:answered": (data: { playerId: string }) => void;
   "round:result": (data: RoundResultPayload) => void;
+  "match:end": (data: MatchEndPayload) => void;
+  "match:rematch_status": (data: { requestedBy: string[] }) => void;
 }
 
 export interface ClientToServerEvents {
@@ -90,6 +109,10 @@ export interface ClientToServerEvents {
   "room:leave": (data: { code: string }) => void;
   "player:submit_answer": (
     data: { roomCode: string; roundNumber: number; answer: string },
+    callback?: (res: { success: boolean; error?: string }) => void
+  ) => void;
+  "match:play_again": (
+    data: { roomCode: string },
     callback?: (res: { success: boolean; error?: string }) => void
   ) => void;
 }

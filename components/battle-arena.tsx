@@ -9,6 +9,8 @@ import type {
   RoundResultPayload,
 } from "@/server/types";
 
+import { NeonStar } from "./neon-star";
+
 export interface BattleArenaProps {
   room: RoomState;
   currentUser: AuthenticatedUser;
@@ -20,6 +22,7 @@ export interface BattleArenaProps {
   selectedOption?: string | null;
   opponentLockedIn?: boolean;
   roundResult?: RoundResultPayload | null;
+  isSuddenDeath?: boolean;
   onSelectOption?: (option: string) => void;
   onLeaveRoom?: () => void;
 }
@@ -95,25 +98,27 @@ function PlayerScoreCard({
           </div>
         )}
 
-        {/* Score indicator dots (Race to 6) */}
+        {/* Score indicator glowing neon stars (Race to 6) */}
         <div className={`flex items-center gap-1 pt-1 ${isRight ? "justify-end" : ""}`}>
           {isRight && (
-            <span className="mr-1 text-xs font-bold text-accent">
+            <span className="mr-1 text-xs font-black text-accent">
               {score}/6
             </span>
           )}
           {[...Array(6)].map((_, i) => (
-            <span
-              key={`${role}-score-${i}`}
-              className={`h-2.5 w-2.5 rounded-full transition-all ${
-                i < score
-                  ? `${role === "Host" ? "bg-primary ring-primary/30" : "bg-accent ring-accent/30"} shadow-xs ring-2`
-                  : "bg-muted border border-border"
-              }`}
+            <NeonStar
+              key={`${role}-star-${i}`}
+              filled={i < score}
+              variant={role === "Host" ? "primary" : "accent"}
             />
           ))}
+          {score > 6 && (
+            <span className={`text-[11px] font-black ${role === "Host" ? "text-primary" : "text-accent"}`}>
+              +{score - 6}
+            </span>
+          )}
           {!isRight && (
-            <span className="ml-1 text-xs font-bold text-primary">
+            <span className="ml-1 text-xs font-black text-primary">
               {score}/6
             </span>
           )}
@@ -153,6 +158,7 @@ export function BattleArena({
   selectedOption = null,
   opponentLockedIn = false,
   roundResult = null,
+  isSuddenDeath = false,
   onSelectOption,
   onLeaveRoom,
 }: BattleArenaProps) {
@@ -236,6 +242,17 @@ export function BattleArena({
 
   return (
     <div className="mx-auto max-w-4xl space-y-6 px-4 py-6">
+      {/* Sudden Death Overtime Notice Banner */}
+      {isSuddenDeath && (
+        <div className="flex items-center justify-center gap-2.5 rounded-2xl border-2 border-destructive/80 bg-destructive/15 px-4 py-3 text-center shadow-lg animate-pulse">
+          <span className="text-xl">⚡</span>
+          <span className="text-sm font-black tracking-wider uppercase text-destructive">
+            SUDDEN DEATH OVERTIME • 1-Question Rounds Until Scores Diverge!
+          </span>
+          <span className="text-xl">⚡</span>
+        </div>
+      )}
+
       {/* Match Scoreboard Header */}
       <div className="grid grid-cols-3 items-center rounded-2xl border border-border bg-card p-4 shadow-sm">
         {/* Host Info */}
@@ -250,11 +267,17 @@ export function BattleArena({
 
         {/* Round Center Indicator */}
         <div className="text-center">
-          <span className="inline-block rounded-full bg-primary/10 px-3 py-1 text-xs font-black tracking-wider uppercase text-primary">
-            Round {roundNumber}
+          <span
+            className={`inline-block rounded-full px-3 py-1 text-xs font-black tracking-wider uppercase ${
+              isSuddenDeath
+                ? "bg-destructive/20 text-destructive animate-pulse"
+                : "bg-primary/10 text-primary"
+            }`}
+          >
+            {isSuddenDeath ? `Sudden Death R${roundNumber}` : `Round ${roundNumber}`}
           </span>
           <p className="pt-1 text-[11px] font-semibold text-muted-foreground uppercase tracking-widest">
-            Race to 6 Correct
+            {isSuddenDeath ? "Tiebreaker Round" : "Race to 6 Correct"}
           </p>
         </div>
 
