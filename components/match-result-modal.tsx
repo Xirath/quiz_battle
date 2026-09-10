@@ -138,7 +138,7 @@ export function MatchResultModal({
             <p className="text-sm font-bold text-muted-foreground pt-1">
               {isWinner
                 ? matchEnd.isForfeit
-                  ? "Opponent disconnected — you won by forfeit!"
+                  ? "Opponent forfeited / disconnected — you won by forfeit!"
                   : "You emerged triumphant in the battle arena!"
                 : matchEnd.isForfeit
                 ? "Match concluded by forfeit."
@@ -165,15 +165,15 @@ export function MatchResultModal({
           />
         </div>
 
-        {/* Rematch Status Notice */}
-        {opponentRequestedRematch && !iRequestedRematch && (
+        {/* Rematch Status Notice (only for normal match conclusions) */}
+        {!matchEnd.isForfeit && opponentRequestedRematch && !iRequestedRematch && (
           <div className="flex items-center justify-center gap-2 rounded-xl border border-accent/50 bg-accent/15 p-3 text-center text-sm font-bold text-accent animate-pulse">
             <span>⚡</span>
             <span>{opponent?.name ?? "Opponent"} wants a rematch! Click Play Again to start!</span>
           </div>
         )}
 
-        {iRequestedRematch && !opponentRequestedRematch && (
+        {!matchEnd.isForfeit && iRequestedRematch && !opponentRequestedRematch && (
           <div className="flex items-center justify-center gap-2 rounded-xl border border-primary/50 bg-primary/10 p-3 text-center text-sm font-bold text-primary">
             <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
             <span>Rematch requested! Waiting for {opponent?.name ?? "opponent"} to accept...</span>
@@ -182,22 +182,28 @@ export function MatchResultModal({
 
         {/* Action Buttons */}
         <div className="flex flex-col gap-3 pt-2 sm:flex-row">
-          <button
-            type="button"
-            onClick={onPlayAgain}
-            disabled={iRequestedRematch}
-            className="flex-1 cursor-pointer rounded-xl bg-primary py-3.5 px-6 text-center text-sm font-extrabold text-primary-foreground shadow-lg transition-all hover:opacity-90 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60 flex items-center justify-center gap-2"
-          >
-            <span>🔄</span>
-            <span>{iRequestedRematch ? "Waiting for Opponent..." : "Play Again (Rematch)"}</span>
-          </button>
+          {!matchEnd.isForfeit && (
+            <button
+              type="button"
+              onClick={onPlayAgain}
+              disabled={iRequestedRematch}
+              className="flex-1 cursor-pointer rounded-xl bg-primary py-3.5 px-6 text-center text-sm font-extrabold text-primary-foreground shadow-lg transition-all hover:opacity-90 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60 flex items-center justify-center gap-2"
+            >
+              <span>🔄</span>
+              <span>{iRequestedRematch ? "Waiting for Opponent..." : "Play Again (Rematch)"}</span>
+            </button>
+          )}
 
           <button
             type="button"
             onClick={onLeaveRoom}
-            className="cursor-pointer rounded-xl border border-border bg-secondary py-3.5 px-6 text-center text-sm font-bold text-secondary-foreground transition-colors hover:bg-secondary-hover active:scale-[0.98]"
+            className={`cursor-pointer rounded-xl border border-border py-3.5 px-6 text-center text-sm font-bold transition-colors active:scale-[0.98] ${
+              matchEnd.isForfeit
+                ? "flex-1 bg-primary text-primary-foreground shadow-lg hover:opacity-90 font-extrabold"
+                : "bg-secondary text-secondary-foreground hover:bg-secondary-hover"
+            }`}
           >
-            Leave Match
+            {matchEnd.isForfeit ? "Return to Home" : "Leave Match"}
           </button>
         </div>
       </div>

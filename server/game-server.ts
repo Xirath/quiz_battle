@@ -441,6 +441,15 @@ export function createGameServer(options: GameServerOptions = {}) {
                 isForfeit: true,
               });
             }
+
+            const updatedRoom = roomManager.leaveRoom(code, user.id);
+            if (updatedRoom) {
+              io.to(`room:${code}`).emit("room:state", updatedRoom);
+              io.to(`room:${code}`).emit("room:player_left", {
+                playerId: user.id,
+                room: updatedRoom,
+              });
+            }
           }
         } else {
           clearRoomTimers(code);

@@ -52,6 +52,8 @@ describe("Disconnection Grace Period & Forfeit Handling Integration", () => {
     "challenger-dc-restore-2",
     "player-host-dc-forfeit-1",
     "player-challenger-dc-forfeit-2",
+    "player-host-leave-forfeit-1",
+    "player-challenger-leave-forfeit-2",
   ];
 
   beforeEach(async () => {
@@ -304,6 +306,106 @@ describe("Disconnection Grace Period & Forfeit Handling Integration", () => {
       expect(dbChallenger?.losses).toBe(2); // 1 + 1
       expect(dbChallenger?.totalMatches).toBe(2); // 1 + 1
       expect(dbChallenger?.totalCorrectAnswers).toBe(5); // 3 + 2
+    } finally {
+      hostSocket.disconnect();
+      challengerSocket.disconnect();
+    }
+  });
+
+  it("awards victory by forfeit immediately when a player explicitly leaves mid-match and informs remaining player", async () => {
+    const hostId = "player-host-leave-forfeit-1";
+    const challengerId = "player-challenger-leave-forfeit-2";
+
+    await prisma.user.create({
+      data: {
+        id: hostId,
+        name: "Host Victor",
+        email: "hostleaveforfeit@quizbattle.local",
+        wins: 0,
+        losses: 0,
+        totalMatches: 0,
+        totalCorrectAnswers: 0,
+      },
+    });
+
+    await prisma.user.create({
+      data: {
+        id: challengerId,
+        name: "Challenger Quitter",
+        email: "challengerleaveforfeit@quizbattle.local",
+        wins: 0,
+        losses: 0,
+        totalMatches: 0,
+        totalCorrectAnswers: 0,
+      },
+    });
+
+    const hostToken = await createAuthToken(hostId, "Host Victor", "hostleaveforfeit@quizbattle.local");
+    const challengerToken = await createAuthToken(challengerId, "Challenger Quitter", "challengerleaveforfeit@quizbattle.local");
+
+    const hostSocket = createSocket(hostToken);
+    const challengerSocket = createSocket(challengerToken);
+
+    try {
+      await Promise.all([waitForConnect(hostSocket), waitForConnect(challengerSocket)]);
+
+      let roomCode = "";
+      await new Promise<void>((resolve, reject) => {
+        hostSocket.emit("room:create", (res) => {
+          if (res.success && res.code) {
+            roomCode = res.code;
+            resolve();
+          } else reject(new Error(res.error));
+        });
+      });
+
+      await new Promise<void>((resolve, reject) => {
+        hostSocket.emit("room:join", { code: roomCode }, (res) => {
+          if (res.success) resolve();
+          else reject(new Error(res.error));
+        });
+      });
+
+      const hostRound1Promise = new Promise<{ roundNumber: number }>((resolve) => {
+        hostSocket.once("round:start", resolve);
+      });
+
+      await new Promise<void>((resolve, reject) => {
+        challengerSocket.emit("room:join", { code: roomCode }, (res) => {
+          if (res.success) resolve();
+          else reject(new Error(res.error));
+        });
+      });
+
+      await hostRound1Promise;
+
+      const hostMatchEndPromise = new Promise<MatchEndPayload>((resolve) => {
+        hostSocket.once("match:end", resolve);
+      });
+
+      // Challenger explicitly forfeits/leaves the active match
+      challengerSocket.emit("room:leave", { code: roomCode });
+
+      // Host receives match:end immediately with forfeit details
+      const matchEnd = await hostMatchEndPromise;
+      expect(matchEnd.winnerId).toBe(hostId);
+      expect(matchEnd.winnerName).toBe("Host Victor");
+      expect(matchEnd.isForfeit).toBe(true);
+
+      // Verify DB persistence
+      await new Promise((r) => setTimeout(r, 60));
+      const dbMatch = await prisma.match.findFirst({
+        where: { roomCode },
+      });
+      expect(dbMatch).not.toBeNull();
+      expect(dbMatch?.winnerId).toBe(hostId);
+      expect(dbMatch?.isForfeit).toBe(true);
+
+      const dbHost = await prisma.user.findUnique({ where: { id: hostId } });
+      expect(dbHost?.wins).toBe(1);
+
+      const dbChallenger = await prisma.user.findUnique({ where: { id: challengerId } });
+      expect(dbChallenger?.losses).toBe(1);
     } finally {
       hostSocket.disconnect();
       challengerSocket.disconnect();

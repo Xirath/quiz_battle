@@ -83,10 +83,7 @@ export function BattleRoom({
     socket.on("room:player_left", (data) => {
       setRoom(data.room);
       setCountdown(null);
-      setActiveQuestion(null);
-      setRoundResult(null);
       setOpponentLockedIn(false);
-      setMatchEnd(null);
       setRematchRequestedBy([]);
       setOpponentDisconnected(false);
     });
@@ -270,39 +267,63 @@ export function BattleRoom({
     );
   }
 
-  // Active Battle Arena view once Round 1 has started
-  if (activeQuestion) {
+  // Match result modal view upon match completion (forfeit or standard victory)
+  if (matchEnd) {
     return (
       <>
-        <BattleArena
-          key={`${room.code}-round-${roundNumber}`}
-          room={room}
-          currentUser={currentUser}
-          question={activeQuestion}
-          roundNumber={roundNumber}
-          hostScore={hostScore}
-          challengerScore={challengerScore}
-          startTime={roundStartTime}
-          selectedOption={selectedOption}
-          opponentLockedIn={opponentLockedIn}
-          roundResult={roundResult}
-          isSuddenDeath={isSuddenDeath}
-          opponentDisconnected={opponentDisconnected}
-          disconnectCountdown={disconnectCountdown}
-          onSelectOption={handleSelectOption}
-          onLeaveRoom={handleLeave}
-        />
-        {matchEnd && (
-          <MatchResultModal
+        {activeQuestion && (
+          <BattleArena
+            key={`${room.code}-round-${roundNumber}`}
             room={room}
             currentUser={currentUser}
-            matchEnd={matchEnd}
-            rematchRequestedBy={rematchRequestedBy}
-            onPlayAgain={handlePlayAgain}
+            question={activeQuestion}
+            roundNumber={roundNumber}
+            hostScore={hostScore}
+            challengerScore={challengerScore}
+            startTime={roundStartTime}
+            selectedOption={selectedOption}
+            opponentLockedIn={opponentLockedIn}
+            roundResult={roundResult}
+            isSuddenDeath={isSuddenDeath}
+            opponentDisconnected={opponentDisconnected}
+            disconnectCountdown={disconnectCountdown}
+            onSelectOption={handleSelectOption}
             onLeaveRoom={handleLeave}
           />
         )}
+        <MatchResultModal
+          room={room}
+          currentUser={currentUser}
+          matchEnd={matchEnd}
+          rematchRequestedBy={rematchRequestedBy}
+          onPlayAgain={handlePlayAgain}
+          onLeaveRoom={handleLeave}
+        />
       </>
+    );
+  }
+
+  // Active Battle Arena view once Round 1 has started
+  if (activeQuestion) {
+    return (
+      <BattleArena
+        key={`${room.code}-round-${roundNumber}`}
+        room={room}
+        currentUser={currentUser}
+        question={activeQuestion}
+        roundNumber={roundNumber}
+        hostScore={hostScore}
+        challengerScore={challengerScore}
+        startTime={roundStartTime}
+        selectedOption={selectedOption}
+        opponentLockedIn={opponentLockedIn}
+        roundResult={roundResult}
+        isSuddenDeath={isSuddenDeath}
+        opponentDisconnected={opponentDisconnected}
+        disconnectCountdown={disconnectCountdown}
+        onSelectOption={handleSelectOption}
+        onLeaveRoom={handleLeave}
+      />
     );
   }
 
