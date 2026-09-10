@@ -121,7 +121,15 @@ export const authConfig: NextAuthConfig = {
       return true;
     },
     async jwt({ token, user }) {
-      if (user?.id) {
+      if (user?.email) {
+        const dbUser = await getOrCreateUser({
+          id: user.id,
+          email: user.email,
+          name: user.name,
+          image: user.image,
+        });
+        token.id = dbUser.id;
+      } else if (user?.id) {
         token.id = user.id;
       }
       return token;

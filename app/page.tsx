@@ -3,6 +3,8 @@ import { auth } from "@/auth";
 import { SignInButton } from "@/components/auth-buttons";
 import { RoomActions } from "@/components/room-actions";
 
+export const dynamic = "force-dynamic";
+
 export default async function Home() {
   const session = await auth();
   const user = session?.user;

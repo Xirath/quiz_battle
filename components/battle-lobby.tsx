@@ -234,6 +234,7 @@ export function BattleRoom({
       socketRef.current.emit("room:leave", { code: roomId });
     }
     router.push("/");
+    router.refresh();
   };
 
   if (error) {
