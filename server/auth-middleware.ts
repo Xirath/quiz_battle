@@ -1,6 +1,7 @@
 import { parseCookie } from "cookie";
 import { decode } from "@auth/core/jwt";
 import type { Socket } from "socket.io";
+import { prisma } from "@/lib/prisma";
 import type { AuthenticatedUser } from "./types";
 
 const SESSION_COOKIE_NAMES = [
@@ -82,17 +83,33 @@ export async function authenticateHandshake(
       throw new Error("Authentication error: Unauthorized");
     }
 
-    const id = (decoded.id as string) || (decoded.sub as string);
-    if (!id) {
+    let id = (decoded.id as string) || (decoded.sub as string);
+    const email = (decoded.email as string) || null;
+    let name = (decoded.name as string) || null;
+    let image = (decoded.image as string) || (decoded.picture as string) || null;
+
+    if (!id && !email) {
       throw new Error("Authentication error: Unauthorized");
+    }
+
+    if (email) {
+      try {
+        const dbUser = await prisma.user.findUnique({ where: { email } });
+        if (dbUser) {
+          id = dbUser.id;
+          name = dbUser.name ?? name;
+          image = dbUser.image ?? image;
+        }
+      } catch {
+        // Fallback to token ID
+      }
     }
 
     return {
       id,
-      name: (decoded.name as string) || null,
-      email: (decoded.email as string) || null,
-      image:
-        (decoded.image as string) || (decoded.picture as string) || null,
+      name,
+      email,
+      image,
     };
   } catch {
     throw new Error("Authentication error: Unauthorized");

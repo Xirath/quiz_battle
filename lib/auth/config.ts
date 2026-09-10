@@ -129,20 +129,20 @@ export const authConfig: NextAuthConfig = {
           image: user.image,
         });
         token.id = dbUser.id;
+        token.sub = dbUser.id;
       } else if (user?.id) {
         token.id = user.id;
       }
       return token;
     },
     async session({ session, token }) {
-      if (token.id && typeof token.id === "string") {
-        session.user.id = token.id;
-        const profile = await getUserProfileWithStats(token.id);
-        if (profile) {
-          session.user.name = profile.name;
-          session.user.image = profile.image;
-          session.user.stats = profile.stats;
-        }
+      const identifier = (token.id as string) || (token.sub as string) || (token.email as string) || session.user?.email;
+      const profile = await getUserProfileWithStats(identifier);
+      if (profile) {
+        session.user.id = profile.id;
+        session.user.name = profile.name ?? session.user.name;
+        session.user.image = profile.image ?? session.user.image;
+        session.user.stats = profile.stats;
       }
       return session;
     },

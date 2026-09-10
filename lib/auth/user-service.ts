@@ -62,11 +62,19 @@ export async function getOrCreateUser(params: {
 }
 
 export async function getUserProfileWithStats(
-  userId: string
+  identifier?: string | null
 ): Promise<UserProfileWithStats | null> {
-  const user = await prisma.user.findUnique({
-    where: { id: userId },
+  if (!identifier) return null;
+
+  let user = await prisma.user.findUnique({
+    where: { id: identifier },
   });
+
+  if (!user && identifier.includes("@")) {
+    user = await prisma.user.findUnique({
+      where: { email: identifier },
+    });
+  }
 
   if (!user) return null;
 
