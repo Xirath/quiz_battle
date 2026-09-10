@@ -36,8 +36,22 @@ export interface MatchState {
   currentRoundNumber: number;
   hostScore: number;
   challengerScore: number;
-  status: "countdown" | "in_round" | "round_ended" | "match_ended";
+  status: "countdown" | "in_round" | "round_ended" | "ROUND_RESULT" | "match_ended";
   countdownSeconds?: number;
+  hostAnswer?: string | null;
+  challengerAnswer?: string | null;
+  roundStartTime?: number;
+}
+
+export interface RoundResultPayload {
+  roundNumber: number;
+  correctAnswer: string;
+  hostAnswer: string | null;
+  challengerAnswer: string | null;
+  hostCorrect: boolean;
+  challengerCorrect: boolean;
+  hostScore: number;
+  challengerScore: number;
 }
 
 export interface SocketData {
@@ -56,7 +70,12 @@ export interface ServerToClientEvents {
   "round:start": (data: {
     roundNumber: number;
     question: ClientQuestion;
+    hostScore?: number;
+    challengerScore?: number;
+    startTime?: number;
   }) => void;
+  "player:answered": (data: { playerId: string }) => void;
+  "round:result": (data: RoundResultPayload) => void;
 }
 
 export interface ClientToServerEvents {
@@ -69,4 +88,8 @@ export interface ClientToServerEvents {
     callback: (res: { success: boolean; room?: RoomState; error?: string }) => void
   ) => void;
   "room:leave": (data: { code: string }) => void;
+  "player:submit_answer": (
+    data: { roomCode: string; roundNumber: number; answer: string },
+    callback?: (res: { success: boolean; error?: string }) => void
+  ) => void;
 }

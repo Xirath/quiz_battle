@@ -1,7 +1,13 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Image from "next/image";
-import type { AuthenticatedUser, RoomState, ClientQuestion } from "@/server/types";
+import type {
+  AuthenticatedUser,
+  RoomState,
+  ClientQuestion,
+  RoundResultPayload,
+} from "@/server/types";
 
 export interface BattleArenaProps {
   room: RoomState;
@@ -10,12 +16,17 @@ export interface BattleArenaProps {
   roundNumber: number;
   hostScore?: number;
   challengerScore?: number;
+  startTime?: number;
   selectedOption?: string | null;
+  opponentLockedIn?: boolean;
+  roundResult?: RoundResultPayload | null;
   onSelectOption?: (option: string) => void;
   onLeaveRoom?: () => void;
 }
 
 const OPTION_LABELS = ["A", "B", "C", "D"];
+const SHORTCUT_KEYS = ["1", "2", "3", "4"];
+const TOTAL_ROUND_SECONDS = 15;
 
 function PlayerScoreCard({
   player,
@@ -23,19 +34,25 @@ function PlayerScoreCard({
   score,
   role,
   align = "left",
+  isLockedIn = false,
 }: {
   player: AuthenticatedUser | null;
   isCurrentUser: boolean;
   score: number;
   role: "Host" | "Challenger";
   align?: "left" | "right";
+  isLockedIn?: boolean;
 }) {
   const isRight = align === "right";
 
   return (
     <div className={`flex items-center gap-3 ${isRight ? "justify-end text-right" : "text-left"}`}>
       {!isRight && (
-        <div className={`relative flex h-12 w-12 shrink-0 items-center justify-center rounded-full border-2 ${role === "Host" ? "border-primary" : "border-accent"} bg-muted`}>
+        <div
+          className={`relative flex h-12 w-12 shrink-0 items-center justify-center rounded-full border-2 ${
+            role === "Host" ? "border-primary" : "border-accent"
+          } bg-muted`}
+        >
           {player?.image ? (
             <Image
               src={player.image}
@@ -59,11 +76,25 @@ function PlayerScoreCard({
             {player?.name ?? role}
           </p>
           {isCurrentUser && (
-            <span className={`rounded ${role === "Host" ? "bg-primary/15 text-primary" : "bg-accent/20 text-accent-foreground"} px-1.5 py-0.5 text-[10px] font-semibold`}>
+            <span
+              className={`rounded ${
+                role === "Host" ? "bg-primary/15 text-primary" : "bg-accent/20 text-accent-foreground"
+              } px-1.5 py-0.5 text-[10px] font-semibold`}
+            >
               You
             </span>
           )}
         </div>
+
+        {/* Locked-in status badge */}
+        {isLockedIn && (
+          <div className={`flex items-center gap-1 pt-0.5 ${isRight ? "justify-end" : ""}`}>
+            <span className="inline-flex items-center gap-1 rounded bg-accent/15 px-1.5 py-0.5 text-[10px] font-extrabold text-accent animate-pulse">
+              ⚡ Locked in
+            </span>
+          </div>
+        )}
+
         {/* Score indicator dots (Race to 6) */}
         <div className={`flex items-center gap-1 pt-1 ${isRight ? "justify-end" : ""}`}>
           {isRight && (
@@ -118,11 +149,90 @@ export function BattleArena({
   roundNumber,
   hostScore = 0,
   challengerScore = 0,
+  startTime,
   selectedOption = null,
+  opponentLockedIn = false,
+  roundResult = null,
   onSelectOption,
   onLeaveRoom,
 }: BattleArenaProps) {
   const isHost = room.host.id === currentUser.id;
+  const isChallenger = room.challenger?.id === currentUser.id;
+
+  // Active synchronized 15-second round countdown timer
+  const [timeLeft, setTimeLeft] = useState(TOTAL_ROUND_SECONDS);
+
+  useEffect(() => {
+    if (roundResult) return;
+
+    const roundStart = startTime ?? Date.now();
+    const interval = setInterval(() => {
+      const elapsedSeconds = (Date.now() - roundStart) / 1000;
+      const remaining = Math.max(0, TOTAL_ROUND_SECONDS - elapsedSeconds);
+      setTimeLeft(remaining);
+
+      if (remaining <= 0) {
+        clearInterval(interval);
+      }
+    }, 100);
+
+    return () => clearInterval(interval);
+  }, [question, roundNumber, roundResult, startTime]);
+
+  // Keyboard shortcut listener: '1'-'4' and 'A'-'D'
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ignore if user is typing in an input
+      if (
+        e.target instanceof HTMLInputElement ||
+        e.target instanceof HTMLTextAreaElement ||
+        e.metaKey ||
+        e.ctrlKey ||
+        e.altKey
+      ) {
+        return;
+      }
+
+      // Can only submit if not already locked in and roundResult not showing
+      if (selectedOption !== null || roundResult !== null) {
+        return;
+      }
+
+      const key = e.key.toUpperCase();
+      let selectedIndex = -1;
+
+      if (key === "1" || key === "A") selectedIndex = 0;
+      else if (key === "2" || key === "B") selectedIndex = 1;
+      else if (key === "3" || key === "C") selectedIndex = 2;
+      else if (key === "4" || key === "D") selectedIndex = 3;
+
+      if (selectedIndex >= 0 && selectedIndex < question.options.length) {
+        const option = question.options[selectedIndex];
+        onSelectOption?.(option);
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [question.options, selectedOption, roundResult, onSelectOption]);
+
+  // Timer Bar Color Logic: Info / Cyan (15s-7.5s) -> Amber (7.5s-3.75s) -> Red (<3.75s)
+  const timerPercentage = Math.min(100, Math.max(0, (timeLeft / TOTAL_ROUND_SECONDS) * 100));
+  let timerBarColor = "bg-info shadow-xs";
+  let timerTextColor = "text-info";
+
+  if (timeLeft <= 3.75) {
+    timerBarColor = "bg-destructive shadow-xs animate-pulse";
+    timerTextColor = "text-destructive font-black animate-pulse";
+  } else if (timeLeft <= 7.5) {
+    timerBarColor = "bg-accent shadow-xs";
+    timerTextColor = "text-accent";
+  }
+
+  // Round Result Evaluation Info
+  const myAnswer = roundResult ? (isHost ? roundResult.hostAnswer : roundResult.challengerAnswer) : null;
+  const myCorrect = roundResult ? (isHost ? roundResult.hostCorrect : roundResult.challengerCorrect) : null;
+  const opponentCorrect = roundResult ? (isHost ? roundResult.challengerCorrect : roundResult.hostCorrect) : null;
 
   return (
     <div className="mx-auto max-w-4xl space-y-6 px-4 py-6">
@@ -135,6 +245,7 @@ export function BattleArena({
           score={hostScore}
           role="Host"
           align="left"
+          isLockedIn={isHost ? selectedOption !== null : opponentLockedIn}
         />
 
         {/* Round Center Indicator */}
@@ -150,11 +261,67 @@ export function BattleArena({
         {/* Challenger Info */}
         <PlayerScoreCard
           player={room.challenger}
-          isCurrentUser={!isHost}
+          isCurrentUser={isChallenger}
           score={challengerScore}
           role="Challenger"
           align="right"
+          isLockedIn={isChallenger ? selectedOption !== null : opponentLockedIn}
         />
+      </div>
+
+      {/* Opponent Locked-in Banner */}
+      {opponentLockedIn && !roundResult && (
+        <div className="flex items-center justify-center gap-2 rounded-xl border border-accent/40 bg-accent/10 px-4 py-2.5 text-center text-sm font-bold text-accent shadow-sm animate-in fade-in slide-in-from-top-2 duration-300">
+          <span className="text-base">⚡</span>
+          <span>Opponent locked in!</span>
+        </div>
+      )}
+
+      {/* 4-Second Round Reveal Intermission Banner */}
+      {roundResult && (
+        <div
+          className={`flex flex-col items-center justify-center gap-1 rounded-2xl border p-4 text-center shadow-md animate-in zoom-in-95 duration-300 ${
+            myCorrect
+              ? "border-success/50 bg-success/15 text-success"
+              : myAnswer
+              ? "border-destructive/50 bg-destructive/15 text-destructive"
+              : "border-accent/50 bg-accent/15 text-accent"
+          }`}
+        >
+          <div className="flex items-center gap-2 text-lg font-black">
+            <span>{myCorrect ? "🎉" : myAnswer ? "❌" : "⏰"}</span>
+            <span>
+              {myCorrect
+                ? "Correct Answer! (+1 Score)"
+                : myAnswer
+                ? "Incorrect Answer!"
+                : "Time Expired! (No Answer Submitted)"}
+            </span>
+          </div>
+          <p className="text-xs font-semibold opacity-90">
+            {opponentCorrect ? "Opponent answered correctly" : "Opponent answered incorrectly"} • Next round starting shortly...
+          </p>
+        </div>
+      )}
+
+      {/* 15-Second Animated Synchronized Timer Bar */}
+      <div className="space-y-1.5">
+        <div className="flex items-center justify-between text-xs font-bold">
+          <span className="text-muted-foreground uppercase tracking-wider flex items-center gap-1">
+            <span>⏱️</span>
+            <span>{roundResult ? "Round Intermission" : "Round Timer"}</span>
+          </span>
+          <span className={`font-mono text-sm ${timerTextColor}`}>
+            {roundResult ? "Reveal (4s)" : `${Math.ceil(timeLeft)}s`}
+          </span>
+        </div>
+
+        <div className="h-3 w-full overflow-hidden rounded-full bg-muted border border-border/80">
+          <div
+            className={`h-full rounded-full transition-all duration-100 ease-linear ${timerBarColor}`}
+            style={{ width: roundResult ? "0%" : `${timerPercentage}%` }}
+          />
+        </div>
       </div>
 
       {/* Question Card */}
@@ -174,33 +341,78 @@ export function BattleArena({
       {/* Options Grid */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         {question.options.map((option, index) => {
-          const label = OPTION_LABELS[index] ?? String(index + 1);
+          const letterLabel = OPTION_LABELS[index] ?? String(index + 1);
+          const shortcutKey = SHORTCUT_KEYS[index] ?? String(index + 1);
           const isSelected = selectedOption === option;
+
+          // Reveal Intermission Color States
+          let buttonStyle = "border-border bg-card hover:border-primary/50 hover:bg-muted/60 text-foreground";
+          let badgeStyle = "bg-secondary text-secondary-foreground group-hover:bg-primary/20 group-hover:text-primary";
+          let statusBadge = null;
+
+          if (roundResult) {
+            const isCorrectAnswer = option === roundResult.correctAnswer;
+            const isMyChoice = option === myAnswer;
+
+            if (isCorrectAnswer) {
+              // Neon Green highlight for correct answer
+              buttonStyle = "border-success bg-success/20 text-success ring-2 ring-success/60 shadow-xs font-bold";
+              badgeStyle = "bg-success text-success-foreground";
+              statusBadge = (
+                <span className="ml-auto rounded bg-success px-2 py-0.5 text-[11px] font-black text-success-foreground">
+                  ✓ Correct
+                </span>
+              );
+            } else if (isMyChoice && !isCorrectAnswer) {
+              // Crimson Red highlight for user's incorrect choice
+              buttonStyle = "border-destructive bg-destructive/20 text-destructive ring-2 ring-destructive/60 line-through opacity-90";
+              badgeStyle = "bg-destructive text-destructive-foreground";
+              statusBadge = (
+                <span className="ml-auto rounded bg-destructive px-2 py-0.5 text-[11px] font-black text-destructive-foreground no-underline">
+                  ✗ Your Answer
+                </span>
+              );
+            } else {
+              // Other options dimmed during reveal
+              buttonStyle = "border-border/50 bg-card/40 text-muted-foreground opacity-40";
+              badgeStyle = "bg-muted text-muted-foreground";
+            }
+          } else if (isSelected) {
+            buttonStyle = "border-primary bg-primary/15 text-foreground ring-2 ring-primary/50 shadow-sm";
+            badgeStyle = "bg-primary text-primary-foreground";
+            statusBadge = (
+              <span className="ml-auto rounded bg-primary/20 px-2 py-0.5 text-[11px] font-extrabold text-primary">
+                🔒 Locked in
+              </span>
+            );
+          }
 
           return (
             <button
               key={`${question.roundNumber}-opt-${index}`}
               type="button"
-              disabled={selectedOption !== null}
+              disabled={selectedOption !== null || roundResult !== null}
               onClick={() => onSelectOption?.(option)}
-              className={`group flex w-full cursor-pointer items-center gap-4 rounded-xl border-2 p-4 text-left transition-all active:scale-[0.99] disabled:cursor-default ${
-                isSelected
-                  ? "border-primary bg-primary/10 text-foreground ring-2 ring-primary/40 shadow-sm"
-                  : "border-border bg-card hover:border-primary/50 hover:bg-muted/60 text-foreground"
-              }`}
+              className={`group flex w-full cursor-pointer items-center gap-4 rounded-xl border-2 p-4 text-left transition-all active:scale-[0.99] disabled:cursor-default ${buttonStyle}`}
             >
               <div
-                className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg font-mono text-sm font-black transition-colors ${
-                  isSelected
-                    ? "bg-primary text-primary-foreground"
-                    : "bg-secondary text-secondary-foreground group-hover:bg-primary/20 group-hover:text-primary"
-                }`}
+                className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg font-mono text-sm font-black transition-colors ${badgeStyle}`}
               >
-                {label}
+                {letterLabel}
               </div>
+
               <span className="text-base font-semibold leading-snug">
                 {option}
               </span>
+
+              {statusBadge}
+
+              {/* Keyboard Shortcut Hint */}
+              {!roundResult && selectedOption === null && (
+                <span className="ml-auto hidden rounded border border-border bg-muted/60 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-muted-foreground group-hover:border-primary/40 group-hover:text-foreground sm:inline-block">
+                  [{shortcutKey}]
+                </span>
+              )}
             </button>
           );
         })}
@@ -217,10 +429,13 @@ export function BattleArena({
             ← Forfeit / Leave Match
           </button>
         )}
-        <span className="text-xs text-muted-foreground font-mono">
-          Room: {room.code}
-        </span>
+        <div className="flex items-center gap-3 text-xs text-muted-foreground font-mono">
+          <span>Shortcuts: [1-4] or [A-D]</span>
+          <span>•</span>
+          <span>Room: {room.code}</span>
+        </div>
       </div>
     </div>
   );
 }
+

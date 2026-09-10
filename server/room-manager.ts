@@ -1,4 +1,4 @@
-import type { AuthenticatedUser, RoomState, MatchQuestion, MatchState } from "./types";
+import type { AuthenticatedUser, RoomState, MatchQuestion, MatchState, RoundResultPayload } from "./types";
 
 const CODE_CHARS = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
 const CODE_LENGTH = 6;
@@ -142,6 +142,134 @@ export class RoomManager {
 
     this.matches.set(normalizedCode, match);
     return { ...match };
+  }
+
+  private initRoundState(match: MatchState, roundNumber: number): void {
+    match.currentRoundNumber = roundNumber;
+    match.status = "in_round";
+    match.hostAnswer = null;
+    match.challengerAnswer = null;
+    match.roundStartTime = Date.now();
+  }
+
+  public startRound(code: string, roundNumber: number): MatchState {
+    const normalizedCode = code.toUpperCase().trim();
+    const match = this.matches.get(normalizedCode);
+    if (!match) {
+      throw new Error("Match not found");
+    }
+
+    this.initRoundState(match, roundNumber);
+    return { ...match };
+  }
+
+  public submitAnswer(
+    code: string,
+    playerId: string,
+    roundNumber: number,
+    answer: string
+  ): { isFirst: boolean; bothAnswered: boolean; isCorrect: boolean } {
+    const normalizedCode = code.toUpperCase().trim();
+    const room = this.rooms.get(normalizedCode);
+    const match = this.matches.get(normalizedCode);
+
+    if (!room || !match) {
+      throw new Error("Match not found");
+    }
+
+    if (match.status !== "in_round") {
+      throw new Error("Match is not in an active round");
+    }
+
+    if (match.currentRoundNumber !== roundNumber) {
+      throw new Error("Invalid round number");
+    }
+
+    const isHost = room.host.id === playerId;
+    const isChallenger = room.challenger?.id === playerId;
+
+    if (!isHost && !isChallenger) {
+      throw new Error("Player is not in this match");
+    }
+
+    const currentAnswer = isHost ? match.hostAnswer : match.challengerAnswer;
+    if (currentAnswer !== null && currentAnswer !== undefined) {
+      throw new Error("Player has already submitted an answer for this round");
+    }
+
+    const isFirst = isHost ? !match.challengerAnswer : !match.hostAnswer;
+
+    if (isHost) {
+      match.hostAnswer = answer;
+    } else {
+      match.challengerAnswer = answer;
+    }
+
+    const currentQuestion = match.questions[match.currentRoundNumber - 1];
+    const isCorrect = Boolean(currentQuestion && currentQuestion.correctAnswer === answer);
+    const bothAnswered = Boolean(
+      match.hostAnswer !== null &&
+      match.hostAnswer !== undefined &&
+      match.challengerAnswer !== null &&
+      match.challengerAnswer !== undefined
+    );
+
+    return { isFirst, bothAnswered, isCorrect };
+  }
+
+  public evaluateRound(code: string): RoundResultPayload | null {
+    const normalizedCode = code.toUpperCase().trim();
+    const match = this.matches.get(normalizedCode);
+    if (!match) return null;
+
+    const currentQuestion = match.questions[match.currentRoundNumber - 1];
+    if (!currentQuestion) return null;
+
+    const hostCorrect = Boolean(
+      match.hostAnswer && match.hostAnswer === currentQuestion.correctAnswer
+    );
+    const challengerCorrect = Boolean(
+      match.challengerAnswer && match.challengerAnswer === currentQuestion.correctAnswer
+    );
+
+    if (hostCorrect) {
+      match.hostScore += 1;
+    }
+    if (challengerCorrect) {
+      match.challengerScore += 1;
+    }
+
+    match.status = "ROUND_RESULT";
+
+    return {
+      roundNumber: match.currentRoundNumber,
+      correctAnswer: currentQuestion.correctAnswer,
+      hostAnswer: match.hostAnswer ?? null,
+      challengerAnswer: match.challengerAnswer ?? null,
+      hostCorrect,
+      challengerCorrect,
+      hostScore: match.hostScore,
+      challengerScore: match.challengerScore,
+    };
+  }
+
+  public nextRound(
+    code: string
+  ): { roundNumber: number; question: MatchQuestion } | null {
+    const normalizedCode = code.toUpperCase().trim();
+    const match = this.matches.get(normalizedCode);
+    if (!match) return null;
+
+    const nextRoundNumber = match.currentRoundNumber + 1;
+    const nextQuestion = match.questions[nextRoundNumber - 1];
+    if (!nextQuestion) return null;
+
+    this.initRoundState(match, nextRoundNumber);
+
+    return {
+      roundNumber: nextRoundNumber,
+      question: { ...nextQuestion },
+    };
   }
 
   public getMatch(code: string): MatchState | null {

@@ -17,6 +17,9 @@ export interface GameServerOptions {
   roomManager?: RoomManager;
   openTdbClient?: OpenTdbClient;
   countdownIntervalMs?: number;
+  roundDurationMs?: number;
+  earlyRevealDebounceMs?: number;
+  roundRevealDurationMs?: number;
 }
 
 export function createGameServer(options: GameServerOptions = {}) {
@@ -26,6 +29,9 @@ export function createGameServer(options: GameServerOptions = {}) {
   const roomManager = options.roomManager ?? (options.port === 0 ? new RoomManager() : defaultRoomManager);
   const openTdbClient = options.openTdbClient ?? defaultOpenTdbClient;
   const countdownIntervalMs = options.countdownIntervalMs ?? 1000;
+  const roundDurationMs = options.roundDurationMs ?? 15000;
+  const earlyRevealDebounceMs = options.earlyRevealDebounceMs ?? 500;
+  const roundRevealDurationMs = options.roundRevealDurationMs ?? 4000;
 
   const activeTimers = new Map<string, NodeJS.Timeout[]>();
 
@@ -64,6 +70,45 @@ export function createGameServer(options: GameServerOptions = {}) {
 
   // Attach handshake authentication middleware
   io.use(createAuthMiddleware(options.secret));
+
+  const triggerRoundResult = (roomCode: string) => {
+    clearRoomTimers(roomCode);
+    const result = roomManager.evaluateRound(roomCode);
+    if (!result) return;
+
+    io.to(`room:${roomCode}`).emit("round:result", result);
+
+    const revealTimer = setTimeout(() => {
+      const next = roomManager.nextRound(roomCode);
+      if (next) {
+        startRound(roomCode, next.roundNumber);
+      }
+    }, roundRevealDurationMs);
+
+    activeTimers.set(roomCode, [revealTimer]);
+  };
+
+  const startRound = (roomCode: string, roundNumber: number) => {
+    clearRoomTimers(roomCode);
+    const match = roomManager.startRound(roomCode, roundNumber);
+    const question = roomManager.getCurrentRoundQuestion(roomCode);
+    if (!question) return;
+
+    const clientPayload = openTdbClient.toClientQuestion(question, roundNumber);
+    io.to(`room:${roomCode}`).emit("round:start", {
+      roundNumber,
+      question: clientPayload,
+      hostScore: match.hostScore,
+      challengerScore: match.challengerScore,
+      startTime: match.roundStartTime,
+    });
+
+    const expirationTimer = setTimeout(() => {
+      triggerRoundResult(roomCode);
+    }, roundDurationMs);
+
+    activeTimers.set(roomCode, [expirationTimer]);
+  };
 
   const startMatchSequence = (roomCode: string) => {
     clearRoomTimers(roomCode);
@@ -109,14 +154,7 @@ export function createGameServer(options: GameServerOptions = {}) {
           io.to(`room:${roomCode}`).emit("room:state", updatedRoom);
         }
 
-        const round1Question = roomManager.getCurrentRoundQuestion(roomCode);
-        if (round1Question) {
-          const clientPayload = openTdbClient.toClientQuestion(round1Question, 1);
-          io.to(`room:${roomCode}`).emit("round:start", {
-            roundNumber: 1,
-            question: clientPayload,
-          });
-        }
+        startRound(roomCode, 1);
       } catch (err) {
         if (process.env.NODE_ENV !== "test") {
           console.error(`[GameServer] Failed to start match for room ${roomCode}:`, err);
@@ -188,6 +226,49 @@ export function createGameServer(options: GameServerOptions = {}) {
         }
       } catch (err) {
         const message = err instanceof Error ? err.message : "Failed to join room";
+        if (typeof callback === "function") {
+          callback({ success: false, error: message });
+        }
+        socket.emit("room:error", { message });
+      }
+    });
+
+    socket.on("player:submit_answer", (data, callback) => {
+      try {
+        const roomCode = data?.roomCode || socket.data.roomCode;
+        if (!roomCode) {
+          throw new Error("Room code is required");
+        }
+        if (!data?.roundNumber || !data?.answer) {
+          throw new Error("Round number and answer are required");
+        }
+
+        const result = roomManager.submitAnswer(
+          roomCode,
+          user.id,
+          data.roundNumber,
+          data.answer
+        );
+
+        if (typeof callback === "function") {
+          callback({ success: true });
+        }
+
+        // Broadcast player:answered to all sockets in room without leaking answer
+        io.to(`room:${roomCode}`).emit("player:answered", {
+          playerId: user.id,
+        });
+
+        // If both players answered before timer expires, trigger early reveal after debounce
+        if (result.bothAnswered) {
+          clearRoomTimers(roomCode);
+          const debounceTimer = setTimeout(() => {
+            triggerRoundResult(roomCode);
+          }, earlyRevealDebounceMs);
+          activeTimers.set(roomCode, [debounceTimer]);
+        }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Failed to submit answer";
         if (typeof callback === "function") {
           callback({ success: false, error: message });
         }

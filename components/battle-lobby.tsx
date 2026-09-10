@@ -11,6 +11,7 @@ import type {
   RoomState,
   AuthenticatedUser,
   ClientQuestion,
+  RoundResultPayload,
 } from "@/server/types";
 import { BattleArena } from "./battle-arena";
 
@@ -29,7 +30,12 @@ export function BattleLobby({
   const [countdown, setCountdown] = useState<{ count: number; text: string } | null>(null);
   const [activeQuestion, setActiveQuestion] = useState<ClientQuestion | null>(null);
   const [roundNumber, setRoundNumber] = useState(1);
+  const [roundStartTime, setRoundStartTime] = useState<number | undefined>(undefined);
+  const [hostScore, setHostScore] = useState(0);
+  const [challengerScore, setChallengerScore] = useState(0);
   const [selectedOption, setSelectedOption] = useState<string | null>(null);
+  const [opponentLockedIn, setOpponentLockedIn] = useState(false);
+  const [roundResult, setRoundResult] = useState<RoundResultPayload | null>(null);
   const socketRef = useRef<Socket<ServerToClientEvents, ClientToServerEvents> | null>(null);
 
   useEffect(() => {
@@ -71,6 +77,8 @@ export function BattleLobby({
       setRoom(data.room);
       setCountdown(null);
       setActiveQuestion(null);
+      setRoundResult(null);
+      setOpponentLockedIn(false);
     });
 
     socket.on("room:error", (data) => {
@@ -85,7 +93,24 @@ export function BattleLobby({
       setCountdown(null);
       setActiveQuestion(data.question);
       setRoundNumber(data.roundNumber);
+      setRoundStartTime(data.startTime);
       setSelectedOption(null);
+      setOpponentLockedIn(false);
+      setRoundResult(null);
+      if (data.hostScore !== undefined) setHostScore(data.hostScore);
+      if (data.challengerScore !== undefined) setChallengerScore(data.challengerScore);
+    });
+
+    socket.on("player:answered", (data) => {
+      if (data.playerId !== currentUser.id) {
+        setOpponentLockedIn(true);
+      }
+    });
+
+    socket.on("round:result", (data) => {
+      setRoundResult(data);
+      setHostScore(data.hostScore);
+      setChallengerScore(data.challengerScore);
     });
 
     socket.on("connect_error", (err) => {
@@ -102,7 +127,7 @@ export function BattleLobby({
       socket.disconnect();
       socketRef.current = null;
     };
-  }, [roomId]);
+  }, [roomId, currentUser.id]);
 
   const handleCopyLink = async () => {
     try {
@@ -112,6 +137,27 @@ export function BattleLobby({
       setTimeout(() => setCopied(false), 2000);
     } catch {
       // Fallback
+    }
+  };
+
+  const handleSelectOption = (option: string) => {
+    if (selectedOption !== null || roundResult !== null) return;
+    setSelectedOption(option);
+    if (socketRef.current) {
+      socketRef.current.emit(
+        "player:submit_answer",
+        {
+          roomCode: roomId,
+          roundNumber,
+          answer: option,
+        },
+        (res) => {
+          if (!res?.success) {
+            setSelectedOption(null);
+            if (res?.error) setError(res.error);
+          }
+        }
+      );
     }
   };
 
@@ -157,12 +203,18 @@ export function BattleLobby({
   if (activeQuestion) {
     return (
       <BattleArena
+        key={`${room.code}-round-${roundNumber}`}
         room={room}
         currentUser={currentUser}
         question={activeQuestion}
         roundNumber={roundNumber}
+        hostScore={hostScore}
+        challengerScore={challengerScore}
+        startTime={roundStartTime}
         selectedOption={selectedOption}
-        onSelectOption={(option) => setSelectedOption(option)}
+        opponentLockedIn={opponentLockedIn}
+        roundResult={roundResult}
+        onSelectOption={handleSelectOption}
         onLeaveRoom={handleLeave}
       />
     );
