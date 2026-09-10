@@ -41,6 +41,8 @@ export function BattleLobby({
   const [isSuddenDeath, setIsSuddenDeath] = useState(false);
   const [matchEnd, setMatchEnd] = useState<MatchEndPayload | null>(null);
   const [rematchRequestedBy, setRematchRequestedBy] = useState<string[]>([]);
+  const [opponentDisconnected, setOpponentDisconnected] = useState(false);
+  const [disconnectCountdown, setDisconnectCountdown] = useState(30);
   const socketRef = useRef<Socket<ServerToClientEvents, ClientToServerEvents> | null>(null);
 
   useEffect(() => {
@@ -86,6 +88,7 @@ export function BattleLobby({
       setOpponentLockedIn(false);
       setMatchEnd(null);
       setRematchRequestedBy([]);
+      setOpponentDisconnected(false);
     });
 
     socket.on("room:error", (data) => {
@@ -96,6 +99,7 @@ export function BattleLobby({
       setCountdown(data);
       setMatchEnd(null);
       setRematchRequestedBy([]);
+      setOpponentDisconnected(false);
     });
 
     socket.on("round:start", (data) => {
@@ -108,6 +112,7 @@ export function BattleLobby({
       setRoundResult(null);
       setIsSuddenDeath(Boolean(data.isSuddenDeath));
       setMatchEnd(null);
+      setOpponentDisconnected(false);
       if (data.hostScore !== undefined) setHostScore(data.hostScore);
       if (data.challengerScore !== undefined) setChallengerScore(data.challengerScore);
     });
@@ -129,10 +134,44 @@ export function BattleLobby({
 
     socket.on("match:end", (data) => {
       setMatchEnd(data);
+      setOpponentDisconnected(false);
     });
 
     socket.on("match:rematch_status", (data) => {
       setRematchRequestedBy(data.requestedBy);
+    });
+
+    socket.on("player:disconnected", (data) => {
+      if (data.playerId !== currentUser.id) {
+        setOpponentDisconnected(true);
+        setDisconnectCountdown(data.countdownSeconds);
+      }
+    });
+
+    socket.on("player:reconnected", (data) => {
+      if (data.playerId !== currentUser.id) {
+        setOpponentDisconnected(false);
+      }
+    });
+
+    socket.on("match:restore", (data) => {
+      if (data.question) {
+        setActiveQuestion(data.question);
+      }
+      setRoundNumber(data.roundNumber);
+      setRoundStartTime(data.startTime);
+      setHostScore(data.hostScore);
+      setChallengerScore(data.challengerScore);
+      setIsSuddenDeath(data.isSuddenDeath);
+      setSelectedOption(data.selectedOption);
+      setOpponentLockedIn(data.opponentLockedIn);
+      setRoundResult(data.roundResult);
+      if (data.opponentDisconnected) {
+        setOpponentDisconnected(true);
+        setDisconnectCountdown(data.disconnectCountdown ?? 30);
+      } else {
+        setOpponentDisconnected(false);
+      }
     });
 
     socket.on("connect_error", (err) => {
@@ -248,6 +287,8 @@ export function BattleLobby({
           opponentLockedIn={opponentLockedIn}
           roundResult={roundResult}
           isSuddenDeath={isSuddenDeath}
+          opponentDisconnected={opponentDisconnected}
+          disconnectCountdown={disconnectCountdown}
           onSelectOption={handleSelectOption}
           onLeaveRoom={handleLeave}
         />

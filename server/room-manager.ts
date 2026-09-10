@@ -1,4 +1,12 @@
-import type { AuthenticatedUser, RoomState, MatchQuestion, MatchState, RoundResultPayload } from "./types";
+import type {
+  AuthenticatedUser,
+  RoomState,
+  MatchQuestion,
+  MatchState,
+  RoundResultPayload,
+  MatchEndPayload,
+  MatchRestorePayload,
+} from "./types";
 
 const CODE_CHARS = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
 const CODE_LENGTH = 6;
@@ -388,6 +396,141 @@ export class RoomManager {
     if (!match || match.questions.length === 0) return null;
     const index = match.currentRoundNumber - 1;
     return match.questions[index] ? { ...match.questions[index] } : null;
+  }
+
+  public handlePlayerDisconnect(
+    code: string,
+    playerId: string
+  ): { isMatchActive: boolean; match?: MatchState; remainingPlayer?: AuthenticatedUser } | null {
+    const normalizedCode = code.toUpperCase().trim();
+    const room = this.rooms.get(normalizedCode);
+    if (!room) return null;
+
+    const match = this.matches.get(normalizedCode);
+    const isMatchActive = Boolean(
+      match &&
+      match.status !== "match_ended" &&
+      match.status !== "FORFEIT" &&
+      room.status === "in_match"
+    );
+
+    if (isMatchActive && match) {
+      match.disconnectedPlayerId = playerId;
+      match.disconnectTimestamp = Date.now();
+      const remainingPlayer = room.host.id === playerId ? (room.challenger ?? undefined) : room.host;
+      return { isMatchActive: true, match: { ...match }, remainingPlayer };
+    }
+
+    return { isMatchActive: false };
+  }
+
+  public handlePlayerReconnect(code: string, playerId: string): MatchState | null {
+    const normalizedCode = code.toUpperCase().trim();
+    const match = this.matches.get(normalizedCode);
+    if (!match) return null;
+
+    if (match.disconnectedPlayerId === playerId) {
+      match.disconnectedPlayerId = null;
+      match.disconnectTimestamp = null;
+    }
+
+    return { ...match };
+  }
+
+  public forfeitMatch(code: string, forfeitedPlayerId: string): MatchEndPayload | null {
+    const normalizedCode = code.toUpperCase().trim();
+    const room = this.rooms.get(normalizedCode);
+    const match = this.matches.get(normalizedCode);
+    if (!room || !match) return null;
+
+    if (match.status === "match_ended" || match.status === "FORFEIT") {
+      return null;
+    }
+
+    const winner = room.host.id === forfeitedPlayerId ? room.challenger : room.host;
+    if (!winner) return null;
+
+    match.status = "FORFEIT";
+    match.isForfeit = true;
+    match.winnerId = winner.id;
+    room.status = "finished";
+
+    return {
+      roomCode: match.roomCode,
+      winnerId: winner.id,
+      winnerName: winner.name ?? "Player",
+      hostScore: match.hostScore,
+      challengerScore: match.challengerScore,
+      roundsPlayed: match.currentRoundNumber,
+      isSuddenDeath: match.isSuddenDeath,
+      isForfeit: true,
+    };
+  }
+
+  public getMatchRestorePayload(code: string, playerId: string): MatchRestorePayload | null {
+    const normalizedCode = code.toUpperCase().trim();
+    const room = this.rooms.get(normalizedCode);
+    const match = this.matches.get(normalizedCode);
+    if (!room || !match) return null;
+
+    const isHost = room.host.id === playerId;
+    const isChallenger = room.challenger?.id === playerId;
+    if (!isHost && !isChallenger) return null;
+
+    const selectedOption = isHost ? (match.hostAnswer ?? null) : (match.challengerAnswer ?? null);
+    const opponentAnswer = isHost ? match.challengerAnswer : match.hostAnswer;
+    const opponentLockedIn = Boolean(opponentAnswer !== null && opponentAnswer !== undefined);
+
+    const questionObj = match.questions[match.currentRoundNumber - 1];
+    const question = questionObj
+      ? {
+          roundNumber: match.currentRoundNumber,
+          category: questionObj.category,
+          question: questionObj.question,
+          options: questionObj.options,
+        }
+      : null;
+
+    let roundResult: RoundResultPayload | null = null;
+    if (match.status === "ROUND_RESULT") {
+      const hostCorrect = Boolean(
+        match.hostAnswer && questionObj && match.hostAnswer === questionObj.correctAnswer
+      );
+      const challengerCorrect = Boolean(
+        match.challengerAnswer && questionObj && match.challengerAnswer === questionObj.correctAnswer
+      );
+      roundResult = {
+        roundNumber: match.currentRoundNumber,
+        correctAnswer: questionObj ? questionObj.correctAnswer : "",
+        hostAnswer: match.hostAnswer ?? null,
+        challengerAnswer: match.challengerAnswer ?? null,
+        hostCorrect,
+        challengerCorrect,
+        hostScore: match.hostScore,
+        challengerScore: match.challengerScore,
+        isSuddenDeath: match.isSuddenDeath,
+        matchEnded: false,
+        winnerId: match.winnerId ?? null,
+      };
+    }
+
+    const opponentId = isHost ? room.challenger?.id : room.host.id;
+    const opponentDisconnected = Boolean(
+      opponentId && match.disconnectedPlayerId === opponentId
+    );
+
+    return {
+      roundNumber: match.currentRoundNumber,
+      question,
+      hostScore: match.hostScore,
+      challengerScore: match.challengerScore,
+      startTime: match.roundStartTime,
+      isSuddenDeath: match.isSuddenDeath,
+      selectedOption,
+      opponentLockedIn,
+      roundResult,
+      opponentDisconnected,
+    };
   }
 }
 

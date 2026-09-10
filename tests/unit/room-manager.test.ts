@@ -194,6 +194,58 @@ describe("RoomManager", () => {
 
       expect(roomManager.getMatch(created.code)).toBeNull();
     });
+
+    it("handles mid-match player disconnect and reconnection seamlessly", () => {
+      const created = roomManager.createRoom(hostUser);
+      roomManager.joinRoom(created.code, challengerUser);
+      roomManager.startMatch(created.code, mockQuestions);
+
+      // Challenger disconnects mid-match
+      const disconnectResult = roomManager.handlePlayerDisconnect(created.code, challengerUser.id);
+      expect(disconnectResult).not.toBeNull();
+      expect(disconnectResult?.isMatchActive).toBe(true);
+      expect(disconnectResult?.remainingPlayer?.id).toBe(hostUser.id);
+
+      const matchDuringDisconnect = roomManager.getMatch(created.code);
+      expect(matchDuringDisconnect?.disconnectedPlayerId).toBe(challengerUser.id);
+      expect(matchDuringDisconnect?.disconnectTimestamp).toBeTypeOf("number");
+
+      // Challenger reconnects
+      const reconnectedMatch = roomManager.handlePlayerReconnect(created.code, challengerUser.id);
+      expect(reconnectedMatch?.disconnectedPlayerId).toBeNull();
+      expect(reconnectedMatch?.disconnectTimestamp).toBeNull();
+
+      // State restoration payload
+      const restorePayload = roomManager.getMatchRestorePayload(created.code, challengerUser.id);
+      expect(restorePayload).not.toBeNull();
+      expect(restorePayload?.roundNumber).toBe(1);
+      expect(restorePayload?.question?.question).toBe("Capital of France?");
+      expect(restorePayload?.hostScore).toBe(0);
+      expect(restorePayload?.challengerScore).toBe(0);
+    });
+
+    it("forfeits match awarding victory to remaining player", () => {
+      const created = roomManager.createRoom(hostUser);
+      roomManager.joinRoom(created.code, challengerUser);
+      roomManager.startMatch(created.code, mockQuestions);
+      roomManager.setMatchScoresForTesting(created.code, 4, 3);
+
+      // Challenger disconnect timeout expires -> forfeit
+      const forfeitResult = roomManager.forfeitMatch(created.code, challengerUser.id);
+      expect(forfeitResult).not.toBeNull();
+      expect(forfeitResult?.winnerId).toBe(hostUser.id);
+      expect(forfeitResult?.winnerName).toBe("Host Player");
+      expect(forfeitResult?.hostScore).toBe(4);
+      expect(forfeitResult?.challengerScore).toBe(3);
+      expect(forfeitResult?.isForfeit).toBe(true);
+
+      const room = roomManager.getRoom(created.code);
+      expect(room?.status).toBe("finished");
+
+      const match = roomManager.getMatch(created.code);
+      expect(match?.status).toBe("FORFEIT");
+      expect(match?.winnerId).toBe(hostUser.id);
+    });
   });
 });
 

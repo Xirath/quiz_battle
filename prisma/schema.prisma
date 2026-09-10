@@ -41,6 +41,7 @@ model Match {
   challengerScore Int
   roundsPlayed    Int      @default(1)
   isSuddenDeath   Boolean  @default(false)
+  isForfeit       Boolean  @default(false)
   createdAt       DateTime @default(now())
 
   host       User  @relation("HostMatches", fields: [hostId], references: [id], onDelete: Cascade)

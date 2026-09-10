@@ -22,6 +22,7 @@ export interface GameServerOptions {
   roundDurationMs?: number;
   earlyRevealDebounceMs?: number;
   roundRevealDurationMs?: number;
+  disconnectGracePeriodMs?: number;
   onMatchEnd?: (params: RecordMatchParams) => Promise<unknown> | void;
 }
 
@@ -35,14 +36,25 @@ export function createGameServer(options: GameServerOptions = {}) {
   const roundDurationMs = options.roundDurationMs ?? 15000;
   const earlyRevealDebounceMs = options.earlyRevealDebounceMs ?? 500;
   const roundRevealDurationMs = options.roundRevealDurationMs ?? 4000;
+  const disconnectGracePeriodMs = options.disconnectGracePeriodMs ?? 30000;
 
   const activeTimers = new Map<string, NodeJS.Timeout[]>();
+  const disconnectTimers = new Map<string, NodeJS.Timeout>();
 
   const clearRoomTimers = (code: string) => {
     const timers = activeTimers.get(code);
     if (timers) {
       timers.forEach((t) => clearTimeout(t));
       activeTimers.delete(code);
+    }
+  };
+
+  const clearDisconnectTimer = (code: string, playerId: string) => {
+    const key = `${code.toUpperCase().trim()}:${playerId}`;
+    const timer = disconnectTimers.get(key);
+    if (timer) {
+      clearTimeout(timer);
+      disconnectTimers.delete(key);
     }
   };
 
@@ -74,6 +86,20 @@ export function createGameServer(options: GameServerOptions = {}) {
   // Attach handshake authentication middleware
   io.use(createAuthMiddleware(options.secret));
 
+  const persistMatchEnd = async (params: RecordMatchParams) => {
+    try {
+      if (options.onMatchEnd) {
+        await options.onMatchEnd(params);
+      } else {
+        await recordMatchResult(params);
+      }
+    } catch (err) {
+      if (process.env.NODE_ENV !== "test") {
+        console.error(`[GameServer] Failed to persist match result for room ${params.roomCode}:`, err);
+      }
+    }
+  };
+
   const triggerRoundResult = async (roomCode: string) => {
     clearRoomTimers(roomCode);
     const result = roomManager.evaluateRound(roomCode);
@@ -83,6 +109,13 @@ export function createGameServer(options: GameServerOptions = {}) {
 
     if (result.matchEnded) {
       const room = roomManager.getRoom(roomCode);
+      if (room) {
+        clearDisconnectTimer(roomCode, room.host.id);
+        if (room.challenger) {
+          clearDisconnectTimer(roomCode, room.challenger.id);
+        }
+      }
+
       const winnerName =
         result.winnerId === room?.host.id
           ? (room?.host.name ?? "Host")
@@ -98,40 +131,23 @@ export function createGameServer(options: GameServerOptions = {}) {
         challengerScore: result.challengerScore,
         roundsPlayed: result.roundNumber,
         isSuddenDeath: result.isSuddenDeath,
+        isForfeit: false,
       };
 
       io.to(`room:${roomCode}`).emit("match:end", endPayload);
 
       if (room && room.challenger) {
-        try {
-          if (options.onMatchEnd) {
-            await options.onMatchEnd({
-              roomCode,
-              hostId: room.host.id,
-              challengerId: room.challenger.id,
-              winnerId: result.winnerId ?? null,
-              hostScore: result.hostScore,
-              challengerScore: result.challengerScore,
-              roundsPlayed: result.roundNumber,
-              isSuddenDeath: result.isSuddenDeath,
-            });
-          } else {
-            await recordMatchResult({
-              roomCode,
-              hostId: room.host.id,
-              challengerId: room.challenger.id,
-              winnerId: result.winnerId ?? null,
-              hostScore: result.hostScore,
-              challengerScore: result.challengerScore,
-              roundsPlayed: result.roundNumber,
-              isSuddenDeath: result.isSuddenDeath,
-            });
-          }
-        } catch (err) {
-          if (process.env.NODE_ENV !== "test") {
-            console.error(`[GameServer] Failed to persist match result for room ${roomCode}:`, err);
-          }
-        }
+        await persistMatchEnd({
+          roomCode,
+          hostId: room.host.id,
+          challengerId: room.challenger.id,
+          winnerId: result.winnerId ?? null,
+          hostScore: result.hostScore,
+          challengerScore: result.challengerScore,
+          roundsPlayed: result.roundNumber,
+          isSuddenDeath: result.isSuddenDeath,
+          isForfeit: false,
+        });
       }
       return;
     }
@@ -287,19 +303,31 @@ export function createGameServer(options: GameServerOptions = {}) {
         socket.data.roomCode = room.code;
         socket.join(`room:${room.code}`);
 
+        // Clear any pending disconnect grace period timer for this player
+        clearDisconnectTimer(room.code, user.id);
+        roomManager.handlePlayerReconnect(room.code, user.id);
+
         if (typeof callback === "function") {
           callback({ success: true, room });
         }
 
-        // Notify both players of the updated room state
+        // Notify both players of the updated room state and reconnection
         io.to(`room:${room.code}`).emit("room:state", room);
+        io.to(`room:${room.code}`).emit("player:reconnected", { playerId: user.id });
         io.to(`room:${room.code}`).emit("room:player_joined", {
           player: user,
           room,
         });
 
-        // Automatically trigger synchronized countdown once 2 players are present
-        if (room.status === "ready" && room.challenger !== null) {
+        // Check if match is already in progress and restore state to the reconnected socket
+        const match = roomManager.getMatch(room.code);
+        if (match && match.status !== "match_ended" && match.status !== "FORFEIT") {
+          const restorePayload = roomManager.getMatchRestorePayload(room.code, user.id);
+          if (restorePayload) {
+            socket.emit("match:restore", restorePayload);
+          }
+        } else if (room.status === "ready" && room.challenger !== null) {
+          // Automatically trigger synchronized countdown once 2 players are present
           startMatchSequence(room.code);
         }
       } catch (err) {
@@ -381,20 +409,49 @@ export function createGameServer(options: GameServerOptions = {}) {
       }
     });
 
-    socket.on("room:leave", (data) => {
+    socket.on("room:leave", async (data) => {
       const code = data?.code || socket.data.roomCode;
       if (code) {
-        clearRoomTimers(code);
+        clearDisconnectTimer(code, user.id);
         socket.leave(`room:${code}`);
-        const updatedRoom = roomManager.leaveRoom(code, user.id);
         socket.data.roomCode = undefined;
 
-        if (updatedRoom) {
-          io.to(`room:${code}`).emit("room:state", updatedRoom);
-          io.to(`room:${code}`).emit("room:player_left", {
-            playerId: user.id,
-            room: updatedRoom,
-          });
+        const match = roomManager.getMatch(code);
+        const isMatchActive = Boolean(
+          match && match.status !== "match_ended" && match.status !== "FORFEIT"
+        );
+
+        if (isMatchActive) {
+          clearRoomTimers(code);
+          const forfeitEnd = roomManager.forfeitMatch(code, user.id);
+          if (forfeitEnd) {
+            io.to(`room:${code}`).emit("match:end", forfeitEnd);
+
+            const room = roomManager.getRoom(code);
+            if (room && room.challenger) {
+              await persistMatchEnd({
+                roomCode: code,
+                hostId: room.host.id,
+                challengerId: room.challenger.id,
+                winnerId: forfeitEnd.winnerId,
+                hostScore: forfeitEnd.hostScore,
+                challengerScore: forfeitEnd.challengerScore,
+                roundsPlayed: forfeitEnd.roundsPlayed,
+                isSuddenDeath: forfeitEnd.isSuddenDeath,
+                isForfeit: true,
+              });
+            }
+          }
+        } else {
+          clearRoomTimers(code);
+          const updatedRoom = roomManager.leaveRoom(code, user.id);
+          if (updatedRoom) {
+            io.to(`room:${code}`).emit("room:state", updatedRoom);
+            io.to(`room:${code}`).emit("room:player_left", {
+              playerId: user.id,
+              room: updatedRoom,
+            });
+          }
         }
       }
     });
@@ -402,15 +459,60 @@ export function createGameServer(options: GameServerOptions = {}) {
     socket.on("disconnect", (reason) => {
       if (socket.data.roomCode) {
         const code = socket.data.roomCode;
-        clearRoomTimers(code);
-        const updatedRoom = roomManager.leaveRoom(code, user.id);
+        const disconnectResult = roomManager.handlePlayerDisconnect(code, user.id);
 
-        if (updatedRoom) {
-          io.to(`room:${code}`).emit("room:state", updatedRoom);
-          io.to(`room:${code}`).emit("room:player_left", {
+        if (disconnectResult?.isMatchActive) {
+          const countdownSeconds = Math.ceil(disconnectGracePeriodMs / 1000);
+          const disconnectTimestamp = Date.now();
+
+          // Broadcast player:disconnected notification banner event to remaining player
+          io.to(`room:${code}`).emit("player:disconnected", {
             playerId: user.id,
-            room: updatedRoom,
+            playerName: user.name,
+            countdownSeconds,
+            disconnectTimestamp,
           });
+
+          const timerKey = `${code.toUpperCase().trim()}:${user.id}`;
+          clearDisconnectTimer(code, user.id);
+
+          const timer = setTimeout(async () => {
+            disconnectTimers.delete(timerKey);
+            const forfeitEnd = roomManager.forfeitMatch(code, user.id);
+            if (forfeitEnd) {
+              clearRoomTimers(code);
+              io.to(`room:${code}`).emit("match:end", forfeitEnd);
+
+              const room = roomManager.getRoom(code);
+              if (room && room.challenger) {
+                await persistMatchEnd({
+                  roomCode: code,
+                  hostId: room.host.id,
+                  challengerId: room.challenger.id,
+                  winnerId: forfeitEnd.winnerId,
+                  hostScore: forfeitEnd.hostScore,
+                  challengerScore: forfeitEnd.challengerScore,
+                  roundsPlayed: forfeitEnd.roundsPlayed,
+                  isSuddenDeath: forfeitEnd.isSuddenDeath,
+                  isForfeit: true,
+                });
+              }
+            }
+          }, disconnectGracePeriodMs);
+
+          disconnectTimers.set(timerKey, timer);
+        } else {
+          clearRoomTimers(code);
+          clearDisconnectTimer(code, user.id);
+          const updatedRoom = roomManager.leaveRoom(code, user.id);
+
+          if (updatedRoom) {
+            io.to(`room:${code}`).emit("room:state", updatedRoom);
+            io.to(`room:${code}`).emit("room:player_left", {
+              playerId: user.id,
+              room: updatedRoom,
+            });
+          }
         }
       }
 
@@ -448,6 +550,11 @@ export function createGameServer(options: GameServerOptions = {}) {
           timers.forEach((t) => clearTimeout(t));
         }
         activeTimers.clear();
+
+        for (const timer of disconnectTimers.values()) {
+          clearTimeout(timer);
+        }
+        disconnectTimers.clear();
 
         io.close(() => {
           httpServer.close(() => {

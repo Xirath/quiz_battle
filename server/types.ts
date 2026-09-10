@@ -36,14 +36,17 @@ export interface MatchState {
   currentRoundNumber: number;
   hostScore: number;
   challengerScore: number;
-  status: "countdown" | "in_round" | "round_ended" | "ROUND_RESULT" | "match_ended";
+  status: "countdown" | "in_round" | "round_ended" | "ROUND_RESULT" | "match_ended" | "FORFEIT";
   countdownSeconds?: number;
   hostAnswer?: string | null;
   challengerAnswer?: string | null;
   roundStartTime?: number;
   isSuddenDeath: boolean;
   winnerId?: string | null;
+  isForfeit?: boolean;
   rematchRequests?: Set<string>;
+  disconnectedPlayerId?: string | null;
+  disconnectTimestamp?: number | null;
 }
 
 export interface RoundResultPayload {
@@ -68,6 +71,21 @@ export interface MatchEndPayload {
   challengerScore: number;
   roundsPlayed: number;
   isSuddenDeath: boolean;
+  isForfeit?: boolean;
+}
+
+export interface MatchRestorePayload {
+  roundNumber: number;
+  question: ClientQuestion | null;
+  hostScore: number;
+  challengerScore: number;
+  startTime?: number;
+  isSuddenDeath: boolean;
+  selectedOption: string | null;
+  opponentLockedIn: boolean;
+  roundResult: RoundResultPayload | null;
+  opponentDisconnected?: boolean;
+  disconnectCountdown?: number;
 }
 
 export interface SocketData {
@@ -95,6 +113,14 @@ export interface ServerToClientEvents {
   "round:result": (data: RoundResultPayload) => void;
   "match:end": (data: MatchEndPayload) => void;
   "match:rematch_status": (data: { requestedBy: string[] }) => void;
+  "player:disconnected": (data: {
+    playerId: string;
+    playerName?: string | null;
+    countdownSeconds: number;
+    disconnectTimestamp: number;
+  }) => void;
+  "player:reconnected": (data: { playerId: string }) => void;
+  "match:restore": (data: MatchRestorePayload) => void;
 }
 
 export interface ClientToServerEvents {

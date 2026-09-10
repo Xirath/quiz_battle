@@ -103,4 +103,32 @@ describe("match-service persistence and stats mutation", () => {
     expect(updatedChallenger?.losses).toBe(2);
     expect(updatedChallenger?.totalMatches).toBe(4);
   });
+
+  it("persists a forfeit victory and updates statistics accordingly", async () => {
+    const match = await recordMatchResult({
+      roomCode: "FORFEIT1",
+      hostId,
+      challengerId,
+      winnerId: hostId,
+      hostScore: 3,
+      challengerScore: 2,
+      roundsPlayed: 4,
+      isForfeit: true,
+    });
+
+    expect(match.winnerId).toBe(hostId);
+    expect(match.isForfeit).toBe(true);
+
+    const updatedHost = await prisma.user.findUnique({ where: { id: hostId } });
+    expect(updatedHost?.wins).toBe(3); // 2 + 1
+    expect(updatedHost?.losses).toBe(1); // 1 + 0
+    expect(updatedHost?.totalMatches).toBe(4); // 3 + 1
+    expect(updatedHost?.totalCorrectAnswers).toBe(15); // 12 + 3
+
+    const updatedChallenger = await prisma.user.findUnique({ where: { id: challengerId } });
+    expect(updatedChallenger?.wins).toBe(1); // 1 + 0
+    expect(updatedChallenger?.losses).toBe(3); // 2 + 1
+    expect(updatedChallenger?.totalMatches).toBe(4); // 3 + 1
+    expect(updatedChallenger?.totalCorrectAnswers).toBe(12); // 10 + 2
+  });
 });

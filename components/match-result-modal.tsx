@@ -38,6 +38,9 @@ export function MatchResultModal({
             {matchEnd.isSuddenDeath && (
               <span className="text-destructive font-black">• Sudden Death</span>
             )}
+            {matchEnd.isForfeit && (
+              <span className="text-warning font-black">• Forfeit Victory</span>
+            )}
           </div>
 
           <div className="py-2">
@@ -48,11 +51,21 @@ export function MatchResultModal({
                   : "text-muted-foreground"
               }`}
             >
-              {isWinner ? "🏆 VICTORY!" : "DEFEAT"}
+              {isWinner
+                ? matchEnd.isForfeit
+                  ? "🏆 FORFEIT WIN!"
+                  : "🏆 VICTORY!"
+                : matchEnd.isForfeit
+                ? "FORFEIT"
+                : "DEFEAT"}
             </h1>
             <p className="text-sm font-bold text-muted-foreground pt-1">
               {isWinner
-                ? "You emerged triumphant in the battle arena!"
+                ? matchEnd.isForfeit
+                  ? "Opponent disconnected — you won by forfeit!"
+                  : "You emerged triumphant in the battle arena!"
+                : matchEnd.isForfeit
+                ? "Match concluded by forfeit."
                 : `${matchEnd.winnerName ?? "Opponent"} took the victory!`}
             </p>
           </div>

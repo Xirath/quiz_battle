@@ -23,6 +23,8 @@ export interface BattleArenaProps {
   opponentLockedIn?: boolean;
   roundResult?: RoundResultPayload | null;
   isSuddenDeath?: boolean;
+  opponentDisconnected?: boolean;
+  disconnectCountdown?: number;
   onSelectOption?: (option: string) => void;
   onLeaveRoom?: () => void;
 }
@@ -38,6 +40,7 @@ function PlayerScoreCard({
   role,
   align = "left",
   isLockedIn = false,
+  isDisconnected = false,
 }: {
   player: AuthenticatedUser | null;
   isCurrentUser: boolean;
@@ -45,6 +48,7 @@ function PlayerScoreCard({
   role: "Host" | "Challenger";
   align?: "left" | "right";
   isLockedIn?: boolean;
+  isDisconnected?: boolean;
 }) {
   const isRight = align === "right";
 
@@ -90,10 +94,19 @@ function PlayerScoreCard({
         </div>
 
         {/* Locked-in status badge */}
-        {isLockedIn && (
+        {isLockedIn && !isDisconnected && (
           <div className={`flex items-center gap-1 pt-0.5 ${isRight ? "justify-end" : ""}`}>
             <span className="inline-flex items-center gap-1 rounded bg-accent/15 px-1.5 py-0.5 text-[10px] font-extrabold text-accent animate-pulse">
               ⚡ Locked in
+            </span>
+          </div>
+        )}
+
+        {/* Disconnected status badge */}
+        {isDisconnected && (
+          <div className={`flex items-center gap-1 pt-0.5 ${isRight ? "justify-end" : ""}`}>
+            <span className="inline-flex items-center gap-1 rounded bg-warning/15 px-1.5 py-0.5 text-[10px] font-black text-warning animate-pulse">
+              ⚠️ Disconnected
             </span>
           </div>
         )}
@@ -159,6 +172,8 @@ export function BattleArena({
   opponentLockedIn = false,
   roundResult = null,
   isSuddenDeath = false,
+  opponentDisconnected = false,
+  disconnectCountdown = 30,
   onSelectOption,
   onLeaveRoom,
 }: BattleArenaProps) {
@@ -167,6 +182,17 @@ export function BattleArena({
 
   // Active synchronized 15-second round countdown timer
   const [timeLeft, setTimeLeft] = useState(TOTAL_ROUND_SECONDS);
+
+  // Live disconnection grace period countdown (30s -> 0s)
+  const [dcSeconds, setDcSeconds] = useState(disconnectCountdown);
+
+  useEffect(() => {
+    if (!opponentDisconnected) return;
+    const interval = setInterval(() => {
+      setDcSeconds((prev) => (prev > 0 ? prev - 1 : 0));
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [opponentDisconnected]);
 
   useEffect(() => {
     if (roundResult) return;
@@ -253,6 +279,16 @@ export function BattleArena({
         </div>
       )}
 
+      {/* Opponent Disconnected Grace Period Countdown Banner */}
+      {opponentDisconnected && !roundResult && (
+        <div className="flex items-center justify-center gap-3 rounded-2xl border-2 border-warning/60 bg-warning/15 px-5 py-3.5 text-center shadow-lg animate-pulse animate-in fade-in slide-in-from-top-2 duration-300">
+          <span className="text-xl">⚠️</span>
+          <span className="text-sm font-black tracking-wide text-warning">
+            Opponent disconnected — waiting for reconnection ({dcSeconds}s)
+          </span>
+        </div>
+      )}
+
       {/* Match Scoreboard Header */}
       <div className="grid grid-cols-3 items-center rounded-2xl border border-border bg-card p-4 shadow-sm">
         {/* Host Info */}
@@ -263,6 +299,7 @@ export function BattleArena({
           role="Host"
           align="left"
           isLockedIn={isHost ? selectedOption !== null : opponentLockedIn}
+          isDisconnected={!isHost && opponentDisconnected}
         />
 
         {/* Round Center Indicator */}
@@ -289,6 +326,7 @@ export function BattleArena({
           role="Challenger"
           align="right"
           isLockedIn={isChallenger ? selectedOption !== null : opponentLockedIn}
+          isDisconnected={!isChallenger && opponentDisconnected}
         />
       </div>
 

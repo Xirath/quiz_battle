@@ -9,6 +9,7 @@ export interface RecordMatchParams {
   challengerScore: number;
   roundsPlayed: number;
   isSuddenDeath?: boolean;
+  isForfeit?: boolean;
 }
 
 async function updatePlayerMatchStats(
@@ -42,6 +43,7 @@ export async function recordMatchResult(params: RecordMatchParams) {
     challengerScore,
     roundsPlayed,
     isSuddenDeath = false,
+    isForfeit = false,
   } = params;
 
   return await prisma.$transaction(async (tx) => {
@@ -55,6 +57,7 @@ export async function recordMatchResult(params: RecordMatchParams) {
         challengerScore,
         roundsPlayed,
         isSuddenDeath,
+        isForfeit,
       },
     });
 
