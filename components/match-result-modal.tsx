@@ -1,5 +1,3 @@
-"use client";
-
 import Image from "next/image";
 import type { AuthenticatedUser, RoomState, MatchEndPayload } from "@/server/types";
 import { NeonStar } from "./neon-star";

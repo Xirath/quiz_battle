@@ -1,6 +1,6 @@
 import { auth } from "@/auth";
 import { LandingHeader } from "@/components/landing-header";
-import { BattleLobby } from "@/components/battle-lobby";
+import { BattleRoom } from "@/components/battle-lobby";
 import { SignInButton } from "@/components/auth-buttons";
 
 export default async function BattlePage({
@@ -18,7 +18,7 @@ export default async function BattlePage({
 
       <main className="flex flex-1 flex-col items-center justify-center p-4">
         {user ? (
-          <BattleLobby
+          <BattleRoom
             roomId={roomId.toUpperCase()}
             currentUser={{
               id: user.id,

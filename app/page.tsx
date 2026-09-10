@@ -23,7 +23,7 @@ export default async function Home() {
           </h1>
 
           <p className="mx-auto max-w-xl text-base sm:text-lg text-muted-foreground">
-            Race to 6 correct answers in live trivia duels. Real-time countdowns,
+            Race to 6 correct answers in live trivia Matches. Real-time countdowns,
             synced questions, and competitive lifetime records.
           </p>
 

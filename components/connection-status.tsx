@@ -7,32 +7,32 @@ const STATUS_CONFIG: Record<
   { label: string; dotClass: string; textClass: string }
 > = {
   connected: {
-    label: "Game Server: Online",
+    label: "Battle Server: Online",
     dotClass: "bg-success animate-pulse",
     textClass: "text-success font-medium",
   },
   connecting: {
-    label: "Game Server: Connecting...",
+    label: "Battle Server: Connecting...",
     dotClass: "bg-warning animate-pulse",
     textClass: "text-warning",
   },
   disconnected: {
-    label: "Game Server: Offline",
+    label: "Battle Server: Offline",
     dotClass: "bg-destructive",
     textClass: "text-destructive",
   },
   unauthorized: {
-    label: "Game Server: Unauthenticated",
+    label: "Battle Server: Unauthenticated",
     dotClass: "bg-warning",
     textClass: "text-muted-foreground",
   },
   error: {
-    label: "Game Server: Error",
+    label: "Battle Server: Error",
     dotClass: "bg-destructive",
     textClass: "text-destructive",
   },
   idle: {
-    label: "Game Server: Idle",
+    label: "Battle Server: Idle",
     dotClass: "bg-muted-foreground",
     textClass: "text-muted-foreground",
   },

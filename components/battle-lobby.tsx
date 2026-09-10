@@ -17,7 +17,7 @@ import type {
 import { BattleArena } from "./battle-arena";
 import { MatchResultModal } from "./match-result-modal";
 
-export function BattleLobby({
+export function BattleRoom({
   roomId,
   currentUser,
 }: {
@@ -507,3 +507,5 @@ export function BattleLobby({
     </div>
   );
 }
+
+export const BattleLobby = BattleRoom;

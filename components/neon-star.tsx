@@ -1,5 +1,3 @@
-"use client";
-
 export interface NeonStarProps {
   filled: boolean;
   variant?: "primary" | "accent";
