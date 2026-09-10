@@ -11,6 +11,84 @@ export interface MatchResultModalProps {
   onLeaveRoom?: () => void;
 }
 
+interface PlayerResultCardProps {
+  player: AuthenticatedUser | null;
+  isCurrentUser: boolean;
+  score: number;
+  role: "Host" | "Challenger";
+  isWinner: boolean;
+}
+
+function PlayerResultCard({
+  player,
+  isCurrentUser,
+  score,
+  role,
+  isWinner,
+}: PlayerResultCardProps) {
+  const isHost = role === "Host";
+  const borderColor = isHost ? "border-primary" : "border-accent";
+  const textColor = isHost ? "text-primary" : "text-accent";
+  const starVariant = isHost ? "primary" : "accent";
+
+  return (
+    <div
+      className={`flex flex-col items-center justify-center rounded-xl p-4 text-center space-y-3 transition-all ${
+        isWinner
+          ? `border-2 ${isHost ? "border-primary/60 bg-primary/10 ring-primary/20" : "border-accent/60 bg-accent/10 ring-accent/20"} shadow-md ring-2`
+          : "border border-border/60 bg-card/60"
+      }`}
+    >
+      <div className={`relative flex h-16 w-16 items-center justify-center rounded-full border-2 ${borderColor} bg-muted`}>
+        {player?.image ? (
+          <Image
+            src={player.image}
+            alt={player.name ?? role}
+            width={64}
+            height={64}
+            className="h-full w-full rounded-full object-cover"
+            unoptimized
+          />
+        ) : (
+          <span className="text-xl font-bold text-foreground">
+            {(player?.name ?? role.charAt(0)).charAt(0).toUpperCase()}
+          </span>
+        )}
+        {isWinner && (
+          <span className="absolute -top-2 -right-2 text-xl drop-shadow">👑</span>
+        )}
+      </div>
+
+      <div>
+        <p className="truncate text-sm font-bold text-foreground">
+          {player?.name ?? role}
+        </p>
+        <p className="text-[11px] font-semibold text-muted-foreground">
+          {isCurrentUser ? "You" : "Opponent"}
+        </p>
+      </div>
+
+      <div className="flex items-center gap-1">
+        {[...Array(6)].map((_, i) => (
+          <NeonStar
+            key={`${role.toLowerCase()}-final-star-${i}`}
+            filled={i < score}
+            variant={starVariant}
+            size="lg"
+          />
+        ))}
+      </div>
+
+      <div className={`font-mono text-2xl font-black ${textColor}`}>
+        {score}{" "}
+        <span className="text-xs font-semibold text-muted-foreground font-sans">
+          Score
+        </span>
+      </div>
+    </div>
+  );
+}
+
 export function MatchResultModal({
   room,
   currentUser,
@@ -71,117 +149,20 @@ export function MatchResultModal({
 
         {/* Final Scoreboard Card */}
         <div className="grid grid-cols-2 gap-4 rounded-2xl border border-border bg-muted/30 p-5 shadow-inner">
-          {/* Host Final Summary */}
-          <div
-            className={`flex flex-col items-center justify-center rounded-xl p-4 text-center space-y-3 transition-all ${
-              matchEnd.winnerId === room.host.id
-                ? "border-2 border-primary/60 bg-primary/10 shadow-md ring-2 ring-primary/20"
-                : "border border-border/60 bg-card/60"
-            }`}
-          >
-            <div className="relative flex h-16 w-16 items-center justify-center rounded-full border-2 border-primary bg-muted">
-              {room.host.image ? (
-                <Image
-                  src={room.host.image}
-                  alt={room.host.name ?? "Host"}
-                  width={64}
-                  height={64}
-                  className="h-full w-full rounded-full object-cover"
-                  unoptimized
-                />
-              ) : (
-                <span className="text-xl font-bold text-foreground">
-                  {(room.host.name ?? "H").charAt(0).toUpperCase()}
-                </span>
-              )}
-              {matchEnd.winnerId === room.host.id && (
-                <span className="absolute -top-2 -right-2 text-xl drop-shadow">👑</span>
-              )}
-            </div>
-
-            <div>
-              <p className="truncate text-sm font-bold text-foreground">
-                {room.host.name ?? "Host"}
-              </p>
-              <p className="text-[11px] font-semibold text-muted-foreground">
-                {isHost ? "You" : "Opponent"}
-              </p>
-            </div>
-
-            <div className="flex items-center gap-1">
-              {[...Array(6)].map((_, i) => (
-                <NeonStar
-                  key={`host-final-star-${i}`}
-                  filled={i < matchEnd.hostScore}
-                  variant="primary"
-                  size="lg"
-                />
-              ))}
-            </div>
-
-            <div className="font-mono text-2xl font-black text-primary">
-              {matchEnd.hostScore}{" "}
-              <span className="text-xs font-semibold text-muted-foreground font-sans">
-                Score
-              </span>
-            </div>
-          </div>
-
-          {/* Challenger Final Summary */}
-          <div
-            className={`flex flex-col items-center justify-center rounded-xl p-4 text-center space-y-3 transition-all ${
-              matchEnd.winnerId === room.challenger?.id
-                ? "border-2 border-accent/60 bg-accent/10 shadow-md ring-2 ring-accent/20"
-                : "border border-border/60 bg-card/60"
-            }`}
-          >
-            <div className="relative flex h-16 w-16 items-center justify-center rounded-full border-2 border-accent bg-muted">
-              {room.challenger?.image ? (
-                <Image
-                  src={room.challenger.image}
-                  alt={room.challenger.name ?? "Challenger"}
-                  width={64}
-                  height={64}
-                  className="h-full w-full rounded-full object-cover"
-                  unoptimized
-                />
-              ) : (
-                <span className="text-xl font-bold text-foreground">
-                  {(room.challenger?.name ?? "C").charAt(0).toUpperCase()}
-                </span>
-              )}
-              {matchEnd.winnerId === room.challenger?.id && (
-                <span className="absolute -top-2 -right-2 text-xl drop-shadow">👑</span>
-              )}
-            </div>
-
-            <div>
-              <p className="truncate text-sm font-bold text-foreground">
-                {room.challenger?.name ?? "Challenger"}
-              </p>
-              <p className="text-[11px] font-semibold text-muted-foreground">
-                {!isHost ? "You" : "Opponent"}
-              </p>
-            </div>
-
-            <div className="flex items-center gap-1">
-              {[...Array(6)].map((_, i) => (
-                <NeonStar
-                  key={`challenger-final-star-${i}`}
-                  filled={i < matchEnd.challengerScore}
-                  variant="accent"
-                  size="lg"
-                />
-              ))}
-            </div>
-
-            <div className="font-mono text-2xl font-black text-accent">
-              {matchEnd.challengerScore}{" "}
-              <span className="text-xs font-semibold text-muted-foreground font-sans">
-                Score
-              </span>
-            </div>
-          </div>
+          <PlayerResultCard
+            player={room.host}
+            isCurrentUser={isHost}
+            score={matchEnd.hostScore}
+            role="Host"
+            isWinner={matchEnd.winnerId === room.host.id}
+          />
+          <PlayerResultCard
+            player={room.challenger}
+            isCurrentUser={!isHost}
+            score={matchEnd.challengerScore}
+            role="Challenger"
+            isWinner={matchEnd.winnerId === room.challenger?.id}
+          />
         </div>
 
         {/* Rematch Status Notice */}

@@ -15,6 +15,10 @@ export class RoomManager {
   private rooms = new Map<string, RoomState>();
   private matches = new Map<string, MatchState>();
 
+  private normalizeCode(code: string): string {
+    return code ? code.toUpperCase().trim() : "";
+  }
+
   private generateCode(): string {
     let code: string;
     let attempts = 0;
@@ -49,13 +53,13 @@ export class RoomManager {
 
   public getRoom(code: string): RoomState | null {
     if (!code) return null;
-    const normalizedCode = code.toUpperCase().trim();
+    const normalizedCode = this.normalizeCode(code);
     const room = this.rooms.get(normalizedCode);
     return room ? { ...room } : null;
   }
 
   public joinRoom(code: string, challenger: AuthenticatedUser): RoomState {
-    const normalizedCode = code.toUpperCase().trim();
+    const normalizedCode = this.normalizeCode(code);
     const room = this.rooms.get(normalizedCode);
 
     if (!room) {
@@ -83,7 +87,7 @@ export class RoomManager {
   }
 
   public leaveRoom(code: string, playerId: string): RoomState | null {
-    const normalizedCode = code.toUpperCase().trim();
+    const normalizedCode = this.normalizeCode(code);
     const room = this.rooms.get(normalizedCode);
 
     if (!room) return null;
@@ -124,7 +128,7 @@ export class RoomManager {
   }
 
   public deleteRoom(code: string): void {
-    const normalizedCode = code.toUpperCase().trim();
+    const normalizedCode = this.normalizeCode(code);
     this.rooms.delete(normalizedCode);
     this.matches.delete(normalizedCode);
   }
@@ -148,7 +152,7 @@ export class RoomManager {
   }
 
   public startMatch(code: string, questions: MatchQuestion[]): MatchState {
-    const normalizedCode = code.toUpperCase().trim();
+    const normalizedCode = this.normalizeCode(code);
     const room = this.rooms.get(normalizedCode);
     if (!room) {
       throw new Error("Room not found");
@@ -170,7 +174,7 @@ export class RoomManager {
   }
 
   public startRound(code: string, roundNumber: number): MatchState {
-    const normalizedCode = code.toUpperCase().trim();
+    const normalizedCode = this.normalizeCode(code);
     const match = this.matches.get(normalizedCode);
     if (!match) {
       throw new Error("Match not found");
@@ -186,7 +190,7 @@ export class RoomManager {
     roundNumber: number,
     answer: string
   ): { isFirst: boolean; bothAnswered: boolean; isCorrect: boolean } {
-    const normalizedCode = code.toUpperCase().trim();
+    const normalizedCode = this.normalizeCode(code);
     const room = this.rooms.get(normalizedCode);
     const match = this.matches.get(normalizedCode);
 
@@ -235,7 +239,7 @@ export class RoomManager {
   }
 
   public evaluateRound(code: string): RoundResultPayload | null {
-    const normalizedCode = code.toUpperCase().trim();
+    const normalizedCode = this.normalizeCode(code);
     const room = this.rooms.get(normalizedCode);
     const match = this.matches.get(normalizedCode);
     if (!room || !match) return null;
@@ -306,7 +310,7 @@ export class RoomManager {
   public nextRound(
     code: string
   ): { roundNumber: number; question: MatchQuestion } | null {
-    const normalizedCode = code.toUpperCase().trim();
+    const normalizedCode = this.normalizeCode(code);
     const match = this.matches.get(normalizedCode);
     if (!match || match.status === "match_ended") return null;
 
@@ -323,7 +327,7 @@ export class RoomManager {
   }
 
   public addQuestions(code: string, newQuestions: MatchQuestion[]): void {
-    const normalizedCode = code.toUpperCase().trim();
+    const normalizedCode = this.normalizeCode(code);
     const match = this.matches.get(normalizedCode);
     if (match) {
       match.questions.push(...newQuestions);
@@ -334,7 +338,7 @@ export class RoomManager {
     code: string,
     playerId: string
   ): { requestedBy: string[]; bothReady: boolean } {
-    const normalizedCode = code.toUpperCase().trim();
+    const normalizedCode = this.normalizeCode(code);
     const room = this.rooms.get(normalizedCode);
     const match = this.matches.get(normalizedCode);
     if (!room || !match) {
@@ -356,7 +360,7 @@ export class RoomManager {
   }
 
   public resetForRematch(code: string, questions: MatchQuestion[]): MatchState {
-    const normalizedCode = code.toUpperCase().trim();
+    const normalizedCode = this.normalizeCode(code);
     const room = this.rooms.get(normalizedCode);
     if (!room) {
       throw new Error("Room not found");
@@ -375,7 +379,7 @@ export class RoomManager {
     challengerScore: number,
     isSuddenDeath = false
   ): void {
-    const normalizedCode = code.toUpperCase().trim();
+    const normalizedCode = this.normalizeCode(code);
     const match = this.matches.get(normalizedCode);
     if (match) {
       match.hostScore = hostScore;
@@ -386,7 +390,7 @@ export class RoomManager {
 
   public getMatch(code: string): MatchState | null {
     if (!code) return null;
-    const normalizedCode = code.toUpperCase().trim();
+    const normalizedCode = this.normalizeCode(code);
     const match = this.matches.get(normalizedCode);
     return match ? { ...match } : null;
   }
@@ -402,7 +406,7 @@ export class RoomManager {
     code: string,
     playerId: string
   ): { isMatchActive: boolean; match?: MatchState; remainingPlayer?: AuthenticatedUser } | null {
-    const normalizedCode = code.toUpperCase().trim();
+    const normalizedCode = this.normalizeCode(code);
     const room = this.rooms.get(normalizedCode);
     if (!room) return null;
 
@@ -425,7 +429,7 @@ export class RoomManager {
   }
 
   public handlePlayerReconnect(code: string, playerId: string): MatchState | null {
-    const normalizedCode = code.toUpperCase().trim();
+    const normalizedCode = this.normalizeCode(code);
     const match = this.matches.get(normalizedCode);
     if (!match) return null;
 
@@ -438,7 +442,7 @@ export class RoomManager {
   }
 
   public forfeitMatch(code: string, forfeitedPlayerId: string): MatchEndPayload | null {
-    const normalizedCode = code.toUpperCase().trim();
+    const normalizedCode = this.normalizeCode(code);
     const room = this.rooms.get(normalizedCode);
     const match = this.matches.get(normalizedCode);
     if (!room || !match) return null;
@@ -468,7 +472,7 @@ export class RoomManager {
   }
 
   public getMatchRestorePayload(code: string, playerId: string): MatchRestorePayload | null {
-    const normalizedCode = code.toUpperCase().trim();
+    const normalizedCode = this.normalizeCode(code);
     const room = this.rooms.get(normalizedCode);
     const match = this.matches.get(normalizedCode);
     if (!room || !match) return null;

@@ -252,43 +252,57 @@ export class OpenTdbClient {
     return this.getFallbackQuestions(amount);
   }
 
-  private sanitizeQuestions(rawQuestions: OpenTdbRawQuestion[]): MatchQuestion[] {
-    return rawQuestions.map((raw, index) => {
-      const category = decode(raw.category);
-      const question = decode(raw.question);
-      const correctAnswer = decode(raw.correct_answer);
-      const incorrectAnswers = raw.incorrect_answers.map((ans) => decode(ans));
-      const options = shuffleArray([correctAnswer, ...incorrectAnswers]);
+  private formatMatchQuestion(
+    idPrefix: string,
+    index: number,
+    categoryRaw: string,
+    questionRaw: string,
+    correctAnswerRaw: string,
+    incorrectAnswersRaw: string[]
+  ): MatchQuestion {
+    const category = decode(categoryRaw);
+    const question = decode(questionRaw);
+    const correctAnswer = decode(correctAnswerRaw);
+    const incorrectAnswers = incorrectAnswersRaw.map((ans) => decode(ans));
+    const options = shuffleArray([correctAnswer, ...incorrectAnswers]);
 
-      return {
-        id: `q-${Date.now()}-${index}-${Math.random().toString(36).substring(2, 7)}`,
-        category,
-        question,
-        correctAnswer,
-        options,
-      };
-    });
+    return {
+      id: `${idPrefix}-${index}-${Math.random().toString(36).substring(2, 7)}`,
+      category,
+      question,
+      correctAnswer,
+      options,
+    };
+  }
+
+  private sanitizeQuestions(rawQuestions: OpenTdbRawQuestion[]): MatchQuestion[] {
+    const timestamp = Date.now();
+    return rawQuestions.map((raw, index) =>
+      this.formatMatchQuestion(
+        `q-${timestamp}`,
+        index,
+        raw.category,
+        raw.question,
+        raw.correct_answer,
+        raw.incorrect_answers
+      )
+    );
   }
 
   private getFallbackQuestions(amount: number): MatchQuestion[] {
     const shuffled = shuffleArray(FALLBACK_QUESTIONS);
     const selected = shuffled.slice(0, Math.min(amount, shuffled.length));
 
-    return selected.map((item, index) => {
-      const category = decode(item.category);
-      const question = decode(item.question);
-      const correctAnswer = decode(item.correctAnswer);
-      const incorrectAnswers = item.incorrectAnswers.map((ans) => decode(ans));
-      const options = shuffleArray([correctAnswer, ...incorrectAnswers]);
-
-      return {
-        id: `q-fallback-${index}-${Math.random().toString(36).substring(2, 7)}`,
-        category,
-        question,
-        correctAnswer,
-        options,
-      };
-    });
+    return selected.map((item, index) =>
+      this.formatMatchQuestion(
+        "q-fallback",
+        index,
+        item.category,
+        item.question,
+        item.correctAnswer,
+        item.incorrectAnswers
+      )
+    );
   }
 
   public toClientQuestion(
