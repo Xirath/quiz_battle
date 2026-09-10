@@ -15,6 +15,31 @@ export interface RoomState {
   createdAt: number;
 }
 
+export interface MatchQuestion {
+  id: string;
+  category: string;
+  question: string;
+  correctAnswer: string;
+  options: string[];
+}
+
+export interface ClientQuestion {
+  roundNumber: number;
+  category: string;
+  question: string;
+  options: string[];
+}
+
+export interface MatchState {
+  roomCode: string;
+  questions: MatchQuestion[];
+  currentRoundNumber: number;
+  hostScore: number;
+  challengerScore: number;
+  status: "countdown" | "in_round" | "round_ended" | "match_ended";
+  countdownSeconds?: number;
+}
+
 export interface SocketData {
   user: AuthenticatedUser;
   roomCode?: string;
@@ -27,6 +52,11 @@ export interface ServerToClientEvents {
   "room:player_joined": (data: { player: AuthenticatedUser; room: RoomState }) => void;
   "room:player_left": (data: { playerId: string; room: RoomState }) => void;
   "room:error": (data: { message: string }) => void;
+  "match:countdown": (data: { count: number; text: string }) => void;
+  "round:start": (data: {
+    roundNumber: number;
+    question: ClientQuestion;
+  }) => void;
 }
 
 export interface ClientToServerEvents {

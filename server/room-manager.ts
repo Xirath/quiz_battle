@@ -1,10 +1,11 @@
-import type { AuthenticatedUser, RoomState } from "./types";
+import type { AuthenticatedUser, RoomState, MatchQuestion, MatchState } from "./types";
 
 const CODE_CHARS = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
 const CODE_LENGTH = 6;
 
 export class RoomManager {
   private rooms = new Map<string, RoomState>();
+  private matches = new Map<string, MatchState>();
 
   private generateCode(): string {
     let code: string;
@@ -82,6 +83,7 @@ export class RoomManager {
     if (room.challenger?.id === playerId) {
       room.challenger = null;
       room.status = "waiting";
+      this.matches.delete(normalizedCode);
       return { ...room };
     }
 
@@ -91,10 +93,12 @@ export class RoomManager {
         room.host = room.challenger;
         room.challenger = null;
         room.status = "waiting";
+        this.matches.delete(normalizedCode);
         return { ...room };
       } else {
         // No players left, delete room
         this.rooms.delete(normalizedCode);
+        this.matches.delete(normalizedCode);
         return null;
       }
     }
@@ -114,6 +118,44 @@ export class RoomManager {
   public deleteRoom(code: string): void {
     const normalizedCode = code.toUpperCase().trim();
     this.rooms.delete(normalizedCode);
+    this.matches.delete(normalizedCode);
+  }
+
+  public startMatch(code: string, questions: MatchQuestion[]): MatchState {
+    const normalizedCode = code.toUpperCase().trim();
+    const room = this.rooms.get(normalizedCode);
+    if (!room) {
+      throw new Error("Room not found");
+    }
+
+    room.status = "in_match";
+
+    const match: MatchState = {
+      roomCode: normalizedCode,
+      questions: [...questions],
+      currentRoundNumber: 1,
+      hostScore: 0,
+      challengerScore: 0,
+      status: "countdown",
+      countdownSeconds: 3,
+    };
+
+    this.matches.set(normalizedCode, match);
+    return { ...match };
+  }
+
+  public getMatch(code: string): MatchState | null {
+    if (!code) return null;
+    const normalizedCode = code.toUpperCase().trim();
+    const match = this.matches.get(normalizedCode);
+    return match ? { ...match } : null;
+  }
+
+  public getCurrentRoundQuestion(code: string): MatchQuestion | null {
+    const match = this.getMatch(code);
+    if (!match || match.questions.length === 0) return null;
+    const index = match.currentRoundNumber - 1;
+    return match.questions[index] ? { ...match.questions[index] } : null;
   }
 }
 

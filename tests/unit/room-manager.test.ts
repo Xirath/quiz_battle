@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { RoomManager } from "@/server/room-manager";
-import type { AuthenticatedUser } from "@/server/types";
+import type { AuthenticatedUser, MatchQuestion } from "@/server/types";
 
 describe("RoomManager", () => {
   let roomManager: RoomManager;
@@ -139,4 +139,61 @@ describe("RoomManager", () => {
       expect(updated?.status).toBe("waiting");
     });
   });
+
+  describe("Match Lifecycle", () => {
+    const mockQuestions: MatchQuestion[] = [
+      {
+        id: "q1",
+        category: "Geography",
+        question: "Capital of France?",
+        correctAnswer: "Paris",
+        options: ["Paris", "London", "Berlin", "Rome"],
+      },
+      {
+        id: "q2",
+        category: "Science",
+        question: "H2O?",
+        correctAnswer: "Water",
+        options: ["Water", "Helium", "Hydrogen", "Oxygen"],
+      },
+    ];
+
+    it("starts a match with questions and sets status to in_match", () => {
+      const created = roomManager.createRoom(hostUser);
+      roomManager.joinRoom(created.code, challengerUser);
+
+      const match = roomManager.startMatch(created.code, mockQuestions);
+
+      expect(match.roomCode).toBe(created.code);
+      expect(match.questions).toHaveLength(2);
+      expect(match.currentRoundNumber).toBe(1);
+      expect(match.hostScore).toBe(0);
+      expect(match.challengerScore).toBe(0);
+
+      const room = roomManager.getRoom(created.code);
+      expect(room?.status).toBe("in_match");
+    });
+
+    it("retrieves current round question with correct answer key intact", () => {
+      const created = roomManager.createRoom(hostUser);
+      roomManager.joinRoom(created.code, challengerUser);
+      roomManager.startMatch(created.code, mockQuestions);
+
+      const currentQ = roomManager.getCurrentRoundQuestion(created.code);
+      expect(currentQ).toEqual(mockQuestions[0]);
+      expect(currentQ?.correctAnswer).toBe("Paris");
+    });
+
+    it("cleans up match when room is deleted or emptied", () => {
+      const created = roomManager.createRoom(hostUser);
+      roomManager.joinRoom(created.code, challengerUser);
+      roomManager.startMatch(created.code, mockQuestions);
+
+      roomManager.leaveRoom(created.code, challengerUser.id);
+      roomManager.leaveRoom(created.code, hostUser.id);
+
+      expect(roomManager.getMatch(created.code)).toBeNull();
+    });
+  });
 });
+

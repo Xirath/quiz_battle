@@ -3,6 +3,7 @@ import type { AddressInfo } from "node:net";
 import { Server as SocketIOServer } from "socket.io";
 import { createAuthMiddleware } from "./auth-middleware";
 import { RoomManager, defaultRoomManager } from "./room-manager";
+import { OpenTdbClient, defaultOpenTdbClient } from "./open-tdb-client";
 import type {
   ClientToServerEvents,
   ServerToClientEvents,
@@ -14,6 +15,8 @@ export interface GameServerOptions {
   corsOrigin?: string | string[];
   secret?: string;
   roomManager?: RoomManager;
+  openTdbClient?: OpenTdbClient;
+  countdownIntervalMs?: number;
 }
 
 export function createGameServer(options: GameServerOptions = {}) {
@@ -21,6 +24,18 @@ export function createGameServer(options: GameServerOptions = {}) {
   const corsOrigin =
     options.corsOrigin ?? process.env.CLIENT_ORIGIN ?? "http://localhost:3000";
   const roomManager = options.roomManager ?? (options.port === 0 ? new RoomManager() : defaultRoomManager);
+  const openTdbClient = options.openTdbClient ?? defaultOpenTdbClient;
+  const countdownIntervalMs = options.countdownIntervalMs ?? 1000;
+
+  const activeTimers = new Map<string, NodeJS.Timeout[]>();
+
+  const clearRoomTimers = (code: string) => {
+    const timers = activeTimers.get(code);
+    if (timers) {
+      timers.forEach((t) => clearTimeout(t));
+      activeTimers.delete(code);
+    }
+  };
 
   const httpServer: HttpServer = createServer((req, res) => {
     // Health check endpoint
@@ -49,6 +64,71 @@ export function createGameServer(options: GameServerOptions = {}) {
 
   // Attach handshake authentication middleware
   io.use(createAuthMiddleware(options.secret));
+
+  const startMatchSequence = (roomCode: string) => {
+    clearRoomTimers(roomCode);
+    const room = roomManager.getRoom(roomCode);
+    if (!room || room.status !== "ready" || !room.challenger) {
+      return;
+    }
+
+    const timers: NodeJS.Timeout[] = [];
+    activeTimers.set(roomCode, timers);
+
+    // Concurrently initiate question pre-fetching so network latency does not block immediate countdown
+    const questionsPromise = openTdbClient.fetchQuestions(20);
+
+    // Synchronized 3-second countdown: 3 (0s) -> 2 (1s) -> 1 (2s) -> GO! (3s)
+    const countdownTicks = [
+      { count: 3, text: "3", delay: 0 },
+      { count: 2, text: "2", delay: countdownIntervalMs },
+      { count: 1, text: "1", delay: countdownIntervalMs * 2 },
+      { count: 0, text: "GO!", delay: countdownIntervalMs * 3 },
+    ];
+
+    countdownTicks.forEach(({ count, text, delay }) => {
+      const timer = setTimeout(() => {
+        io.to(`room:${roomCode}`).emit("match:countdown", { count, text });
+      }, delay);
+      timers.push(timer);
+    });
+
+    // Deliver Round 1 upon countdown finish (at exactly 3s / countdownIntervalMs * 3)
+    const roundStartTimer = setTimeout(async () => {
+      try {
+        const currentRoom = roomManager.getRoom(roomCode);
+        if (!currentRoom || !currentRoom.challenger) {
+          return;
+        }
+
+        const questions = await questionsPromise;
+        roomManager.startMatch(roomCode, questions);
+
+        const updatedRoom = roomManager.getRoom(roomCode);
+        if (updatedRoom) {
+          io.to(`room:${roomCode}`).emit("room:state", updatedRoom);
+        }
+
+        const round1Question = roomManager.getCurrentRoundQuestion(roomCode);
+        if (round1Question) {
+          const clientPayload = openTdbClient.toClientQuestion(round1Question, 1);
+          io.to(`room:${roomCode}`).emit("round:start", {
+            roundNumber: 1,
+            question: clientPayload,
+          });
+        }
+      } catch (err) {
+        if (process.env.NODE_ENV !== "test") {
+          console.error(`[GameServer] Failed to start match for room ${roomCode}:`, err);
+        }
+        io.to(`room:${roomCode}`).emit("room:error", {
+          message: "Failed to load trivia questions for match",
+        });
+      }
+    }, countdownIntervalMs * 3);
+
+    timers.push(roundStartTimer);
+  };
 
   io.on("connection", (socket) => {
     const user = socket.data.user;
@@ -101,6 +181,11 @@ export function createGameServer(options: GameServerOptions = {}) {
           player: user,
           room,
         });
+
+        // Automatically trigger synchronized countdown once 2 players are present
+        if (room.status === "ready" && room.challenger !== null) {
+          startMatchSequence(room.code);
+        }
       } catch (err) {
         const message = err instanceof Error ? err.message : "Failed to join room";
         if (typeof callback === "function") {
@@ -113,6 +198,7 @@ export function createGameServer(options: GameServerOptions = {}) {
     socket.on("room:leave", (data) => {
       const code = data?.code || socket.data.roomCode;
       if (code) {
+        clearRoomTimers(code);
         socket.leave(`room:${code}`);
         const updatedRoom = roomManager.leaveRoom(code, user.id);
         socket.data.roomCode = undefined;
@@ -130,6 +216,7 @@ export function createGameServer(options: GameServerOptions = {}) {
     socket.on("disconnect", (reason) => {
       if (socket.data.roomCode) {
         const code = socket.data.roomCode;
+        clearRoomTimers(code);
         const updatedRoom = roomManager.leaveRoom(code, user.id);
 
         if (updatedRoom) {
@@ -154,6 +241,7 @@ export function createGameServer(options: GameServerOptions = {}) {
     io,
     port,
     roomManager,
+    openTdbClient,
     listen: (): Promise<{ port: number; address: string }> => {
       return new Promise((resolve, reject) => {
         httpServer.listen(port, () => {
@@ -169,6 +257,12 @@ export function createGameServer(options: GameServerOptions = {}) {
     },
     close: (): Promise<void> => {
       return new Promise((resolve) => {
+        // Clear all remaining timers
+        for (const timers of activeTimers.values()) {
+          timers.forEach((t) => clearTimeout(t));
+        }
+        activeTimers.clear();
+
         io.close(() => {
           httpServer.close(() => {
             resolve();
