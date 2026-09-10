@@ -47,6 +47,35 @@ export async function recordMatchResult(params: RecordMatchParams) {
   } = params;
 
   return await prisma.$transaction(async (tx) => {
+    // Ensure both host and challenger records exist to prevent FK constraint failures
+    await tx.user.upsert({
+      where: { id: hostId },
+      update: {},
+      create: {
+        id: hostId,
+        name: "Host Player",
+        wins: 0,
+        losses: 0,
+        totalMatches: 0,
+        totalCorrectAnswers: 0,
+      },
+    });
+
+    if (challengerId !== hostId) {
+      await tx.user.upsert({
+        where: { id: challengerId },
+        update: {},
+        create: {
+          id: challengerId,
+          name: "Challenger Player",
+          wins: 0,
+          losses: 0,
+          totalMatches: 0,
+          totalCorrectAnswers: 0,
+        },
+      });
+    }
+
     const match = await tx.match.create({
       data: {
         roomCode,
@@ -61,19 +90,21 @@ export async function recordMatchResult(params: RecordMatchParams) {
       },
     });
 
-    const isHostWinner = winnerId === hostId;
-    const isHostLoser = winnerId !== null && winnerId !== hostId;
+    const isHostWinner = Boolean(winnerId && winnerId === hostId);
+    const isHostLoser = Boolean(winnerId && winnerId !== hostId);
     await updatePlayerMatchStats(tx, hostId, hostScore, isHostWinner, isHostLoser);
 
-    const isChallengerWinner = winnerId === challengerId;
-    const isChallengerLoser = winnerId !== null && winnerId !== challengerId;
-    await updatePlayerMatchStats(
-      tx,
-      challengerId,
-      challengerScore,
-      isChallengerWinner,
-      isChallengerLoser
-    );
+    if (challengerId !== hostId) {
+      const isChallengerWinner = Boolean(winnerId && winnerId === challengerId);
+      const isChallengerLoser = Boolean(winnerId && winnerId !== challengerId);
+      await updatePlayerMatchStats(
+        tx,
+        challengerId,
+        challengerScore,
+        isChallengerWinner,
+        isChallengerLoser
+      );
+    }
 
     return match;
   });

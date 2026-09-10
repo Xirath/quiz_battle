@@ -429,12 +429,11 @@ export function createGameServer(options: GameServerOptions = {}) {
           if (forfeitEnd) {
             io.to(`room:${code}`).emit("match:end", forfeitEnd);
 
-            const room = roomManager.getRoom(code);
-            if (room && room.challenger) {
+            if (forfeitEnd.host && forfeitEnd.challenger && forfeitEnd.winnerId) {
               await persistMatchEnd({
                 roomCode: code,
-                hostId: room.host.id,
-                challengerId: room.challenger.id,
+                hostId: forfeitEnd.host.id,
+                challengerId: forfeitEnd.challenger.id,
                 winnerId: forfeitEnd.winnerId,
                 hostScore: forfeitEnd.hostScore,
                 challengerScore: forfeitEnd.challengerScore,
@@ -494,12 +493,11 @@ export function createGameServer(options: GameServerOptions = {}) {
               clearRoomTimers(code);
               io.to(`room:${code}`).emit("match:end", forfeitEnd);
 
-              const room = roomManager.getRoom(code);
-              if (room && room.challenger) {
+              if (forfeitEnd.host && forfeitEnd.challenger && forfeitEnd.winnerId) {
                 await persistMatchEnd({
                   roomCode: code,
-                  hostId: room.host.id,
-                  challengerId: room.challenger.id,
+                  hostId: forfeitEnd.host.id,
+                  challengerId: forfeitEnd.challenger.id,
                   winnerId: forfeitEnd.winnerId,
                   hostScore: forfeitEnd.hostScore,
                   challengerScore: forfeitEnd.challengerScore,
