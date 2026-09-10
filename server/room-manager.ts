@@ -468,6 +468,8 @@ export class RoomManager {
       roundsPlayed: match.currentRoundNumber,
       isSuddenDeath: match.isSuddenDeath,
       isForfeit: true,
+      host: { ...room.host },
+      challenger: room.challenger ? { ...room.challenger } : null,
     };
   }
 

@@ -391,6 +391,8 @@ describe("Disconnection Grace Period & Forfeit Handling Integration", () => {
       expect(matchEnd.winnerId).toBe(hostId);
       expect(matchEnd.winnerName).toBe("Host Victor");
       expect(matchEnd.isForfeit).toBe(true);
+      expect(matchEnd.host?.name).toBe("Host Victor");
+      expect(matchEnd.challenger?.name).toBe("Challenger Quitter");
 
       // Verify DB persistence
       await new Promise((r) => setTimeout(r, 60));

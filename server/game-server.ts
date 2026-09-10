@@ -132,6 +132,8 @@ export function createGameServer(options: GameServerOptions = {}) {
         roundsPlayed: result.roundNumber,
         isSuddenDeath: result.isSuddenDeath,
         isForfeit: false,
+        host: room ? { ...room.host } : undefined,
+        challenger: room?.challenger ? { ...room.challenger } : null,
       };
 
       io.to(`room:${roomCode}`).emit("match:end", endPayload);

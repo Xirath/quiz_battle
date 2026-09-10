@@ -72,6 +72,8 @@ export interface MatchEndPayload {
   roundsPlayed: number;
   isSuddenDeath: boolean;
   isForfeit?: boolean;
+  host?: AuthenticatedUser;
+  challenger?: AuthenticatedUser | null;
 }
 
 export interface MatchRestorePayload {

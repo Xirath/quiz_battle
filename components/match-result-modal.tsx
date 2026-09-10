@@ -97,9 +97,11 @@ export function MatchResultModal({
   onPlayAgain,
   onLeaveRoom,
 }: MatchResultModalProps) {
+  const hostPlayer = matchEnd.host ?? room.host;
+  const challengerPlayer = matchEnd.challenger ?? room.challenger;
+  const isHost = hostPlayer?.id === currentUser.id;
+  const opponent = isHost ? challengerPlayer : hostPlayer;
   const isWinner = matchEnd.winnerId === currentUser.id;
-  const isHost = room.host.id === currentUser.id;
-  const opponent = isHost ? room.challenger : room.host;
   const iRequestedRematch = rematchRequestedBy.includes(currentUser.id);
   const opponentRequestedRematch = opponent ? rematchRequestedBy.includes(opponent.id) : false;
 
@@ -150,18 +152,18 @@ export function MatchResultModal({
         {/* Final Scoreboard Card */}
         <div className="grid grid-cols-2 gap-4 rounded-2xl border border-border bg-muted/30 p-5 shadow-inner">
           <PlayerResultCard
-            player={room.host}
+            player={hostPlayer}
             isCurrentUser={isHost}
             score={matchEnd.hostScore}
             role="Host"
-            isWinner={matchEnd.winnerId === room.host.id}
+            isWinner={matchEnd.winnerId === hostPlayer?.id}
           />
           <PlayerResultCard
-            player={room.challenger}
+            player={challengerPlayer}
             isCurrentUser={!isHost}
             score={matchEnd.challengerScore}
             role="Challenger"
-            isWinner={matchEnd.winnerId === room.challenger?.id}
+            isWinner={matchEnd.winnerId === challengerPlayer?.id}
           />
         </div>
 
