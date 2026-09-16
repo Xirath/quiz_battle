@@ -187,6 +187,10 @@ export function BattleArena({
   const [dcSeconds, setDcSeconds] = useState(disconnectCountdown);
 
   useEffect(() => {
+    setDcSeconds(disconnectCountdown);
+  }, [disconnectCountdown]);
+
+  useEffect(() => {
     if (!opponentDisconnected) return;
     const interval = setInterval(() => {
       setDcSeconds((prev) => (prev > 0 ? prev - 1 : 0));
@@ -280,7 +284,7 @@ export function BattleArena({
       )}
 
       {/* Opponent Disconnected Grace Period Countdown Banner */}
-      {opponentDisconnected && !roundResult && (
+      {opponentDisconnected && (
         <div className="flex items-center justify-center gap-3 rounded-2xl border-2 border-warning/60 bg-warning/15 px-5 py-3.5 text-center shadow-lg animate-pulse animate-in fade-in slide-in-from-top-2 duration-300">
           <span className="text-xl">⚠️</span>
           <span className="text-sm font-black tracking-wide text-warning">
@@ -360,7 +364,8 @@ export function BattleArena({
             </span>
           </div>
           <p className="text-xs font-semibold opacity-90">
-            {opponentCorrect ? "Opponent answered correctly" : "Opponent answered incorrectly"} • Next round starting shortly...
+            {opponentCorrect ? "Opponent answered correctly" : "Opponent answered incorrectly"} •{" "}
+            {opponentDisconnected ? "Waiting for opponent to reconnect..." : "Next round starting shortly..."}
           </p>
         </div>
       )}

@@ -54,6 +54,8 @@ describe("Disconnection Grace Period & Forfeit Handling Integration", () => {
     "player-challenger-dc-forfeit-2",
     "player-host-leave-forfeit-1",
     "player-challenger-leave-forfeit-2",
+    "player-host-dc-pause-1",
+    "player-challenger-dc-pause-2",
   ];
 
   beforeEach(async () => {
@@ -411,6 +413,127 @@ describe("Disconnection Grace Period & Forfeit Handling Integration", () => {
     } finally {
       hostSocket.disconnect();
       challengerSocket.disconnect();
+    }
+  });
+
+  it("does not advance to the next round while a player is disconnected, waiting for reconnection", async () => {
+    const pauseServer = createGameServer({
+      port: 0,
+      secret: TEST_SECRET,
+      corsOrigin: "http://localhost:3000",
+      countdownIntervalMs: 10,
+      roundDurationMs: 100,
+      earlyRevealDebounceMs: 20,
+      roundRevealDurationMs: 40,
+      disconnectGracePeriodMs: 2000,
+    });
+    const addr = await pauseServer.listen();
+    const testPort = addr.port;
+
+    const createCustomSocket = (token: string): TypedClientSocket => {
+      return ClientSocket(`http://localhost:${testPort}`, {
+        extraHeaders: {
+          cookie: `authjs.session-token=${token}`,
+        },
+        transports: ["websocket"],
+        reconnection: false,
+      });
+    };
+
+    const hostId = "player-host-dc-pause-1";
+    const challengerId = "player-challenger-dc-pause-2";
+
+    const hostToken = await createAuthToken(hostId, "Host Victor", "hostpause@quizbattle.local");
+    const challengerToken = await createAuthToken(challengerId, "Challenger Wait", "challengerpause@quizbattle.local");
+
+    const hostSocket = createCustomSocket(hostToken);
+    let challengerSocket = createCustomSocket(challengerToken);
+
+    try {
+      await Promise.all([waitForConnect(hostSocket), waitForConnect(challengerSocket)]);
+
+      let roomCode = "";
+      await new Promise<void>((resolve, reject) => {
+        hostSocket.emit("room:create", (res) => {
+          if (res.success && res.code) {
+            roomCode = res.code;
+            resolve();
+          } else reject(new Error(res.error));
+        });
+      });
+
+      await new Promise<void>((resolve, reject) => {
+        hostSocket.emit("room:join", { code: roomCode }, (res) => {
+          if (res.success) resolve();
+          else reject(new Error(res.error));
+        });
+      });
+
+      const hostRound1Promise = new Promise<{ roundNumber: number }>((resolve) => {
+        hostSocket.once("round:start", resolve);
+      });
+
+      await new Promise<void>((resolve, reject) => {
+        challengerSocket.emit("room:join", { code: roomCode }, (res) => {
+          if (res.success) resolve();
+          else reject(new Error(res.error));
+        });
+      });
+
+      await hostRound1Promise;
+
+      // Challenger disconnects mid-round 1
+      challengerSocket.disconnect();
+
+      // Host answers round 1
+      hostSocket.emit("player:submit_answer", {
+        roomCode,
+        roundNumber: 1,
+        answer: "Any Answer",
+      });
+
+      let receivedRound2WhileDisconnected = false;
+      const onRoundStart = (data: { roundNumber: number }) => {
+        if (data.roundNumber === 2) {
+          receivedRound2WhileDisconnected = true;
+        }
+      };
+      hostSocket.on("round:start", onRoundStart);
+
+      // Wait for round 1 duration (100ms) + roundRevealDurationMs (40ms) + 100ms buffer
+      await new Promise((r) => setTimeout(r, 250));
+
+      // Assert that round 2 was NOT started while player was disconnected
+      expect(receivedRound2WhileDisconnected).toBe(false);
+
+      // Verify match state is still paused waiting for reconnect
+      const match = pauseServer.roomManager.getMatch(roomCode);
+      expect(match?.disconnectedPlayerId).toBe(challengerId);
+
+      // Now challenger reconnects
+      challengerSocket = createCustomSocket(challengerToken);
+      await waitForConnect(challengerSocket);
+
+      const hostRound2Promise = new Promise<{ roundNumber: number }>((resolve) => {
+        hostSocket.once("round:start", resolve);
+      });
+
+      await new Promise<void>((resolve, reject) => {
+        challengerSocket.emit("room:join", { code: roomCode }, (res) => {
+          if (res.success) resolve();
+          else reject(new Error(res.error));
+        });
+      });
+
+      // Once reconnected, next round (Round 2) should start!
+      const round2Data = await hostRound2Promise;
+      expect(round2Data.roundNumber).toBe(2);
+
+      hostSocket.off("round:start", onRoundStart);
+    } finally {
+      hostSocket.disconnect();
+      challengerSocket.disconnect();
+      await pauseServer.close();
     }
   });
 });

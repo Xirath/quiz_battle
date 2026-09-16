@@ -100,6 +100,25 @@ export function createGameServer(options: GameServerOptions = {}) {
     }
   };
 
+  const advanceToNextRound = async (roomCode: string) => {
+    let next = roomManager.nextRound(roomCode);
+    if (!next) {
+      // Prolonged sudden death: fetch more questions
+      try {
+        const extraQuestions = await openTdbClient.fetchQuestions(10);
+        roomManager.addQuestions(roomCode, extraQuestions);
+        next = roomManager.nextRound(roomCode);
+      } catch (e) {
+        if (process.env.NODE_ENV !== "test") {
+          console.error(`[GameServer] Failed to fetch extra questions for sudden death:`, e);
+        }
+      }
+    }
+    if (next) {
+      startRound(roomCode, next.roundNumber);
+    }
+  };
+
   const triggerRoundResult = async (roomCode: string) => {
     clearRoomTimers(roomCode);
     const result = roomManager.evaluateRound(roomCode);
@@ -155,22 +174,14 @@ export function createGameServer(options: GameServerOptions = {}) {
     }
 
     const revealTimer = setTimeout(async () => {
-      let next = roomManager.nextRound(roomCode);
-      if (!next) {
-        // Prolonged sudden death: fetch more questions
-        try {
-          const extraQuestions = await openTdbClient.fetchQuestions(10);
-          roomManager.addQuestions(roomCode, extraQuestions);
-          next = roomManager.nextRound(roomCode);
-        } catch (e) {
-          if (process.env.NODE_ENV !== "test") {
-            console.error(`[GameServer] Failed to fetch extra questions for sudden death:`, e);
-          }
-        }
+      const match = roomManager.getMatch(roomCode);
+      if (match?.disconnectedPlayerId) {
+        // Player is disconnected: do not reveal next question/round.
+        // Wait for player reconnection or disconnect timer expiration.
+        activeTimers.delete(roomCode);
+        return;
       }
-      if (next) {
-        startRound(roomCode, next.roundNumber);
-      }
+      await advanceToNextRound(roomCode);
     }, roundRevealDurationMs);
 
     activeTimers.set(roomCode, [revealTimer]);
@@ -295,7 +306,7 @@ export function createGameServer(options: GameServerOptions = {}) {
       }
     });
 
-    socket.on("room:join", (data, callback) => {
+    socket.on("room:join", async (data, callback) => {
       try {
         if (!data?.code) {
           throw new Error("Room code is required");
@@ -324,9 +335,17 @@ export function createGameServer(options: GameServerOptions = {}) {
         // Check if match is already in progress and restore state to the reconnected socket
         const match = roomManager.getMatch(room.code);
         if (match && match.status !== "match_ended" && match.status !== "FORFEIT") {
-          const restorePayload = roomManager.getMatchRestorePayload(room.code, user.id);
-          if (restorePayload) {
-            socket.emit("match:restore", restorePayload);
+          const roomTimers = activeTimers.get(room.code);
+          const hasActiveTimers = Boolean(roomTimers && roomTimers.length > 0);
+
+          if (match.status === "ROUND_RESULT" && !hasActiveTimers) {
+            // Reveal intermission completed while disconnected; advance to next round upon reconnect
+            await advanceToNextRound(room.code);
+          } else {
+            const restorePayload = roomManager.getMatchRestorePayload(room.code, user.id);
+            if (restorePayload) {
+              socket.emit("match:restore", restorePayload);
+            }
           }
         } else if (room.status === "ready" && room.challenger !== null) {
           // Automatically trigger synchronized countdown once 2 players are present
