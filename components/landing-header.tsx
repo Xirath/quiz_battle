@@ -1,4 +1,5 @@
 import Image from "next/image";
+import Link from "next/link";
 import { auth } from "@/auth";
 import { SignInButton, SignOutButton } from "@/components/auth-buttons";
 import { ConnectionStatusBadge } from "@/components/connection-status";
@@ -10,21 +11,59 @@ export async function LandingHeader() {
 
   return (
     <header className="w-full border-b border-border bg-card text-card-foreground">
-      <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3 sm:px-6">
+      <div className="flex w-full items-center justify-between px-4 py-6 sm:px-6 lg:px-8">
         {/* Brand */}
-        <div className="flex items-center gap-2.5">
-          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary text-primary-foreground font-black text-lg shadow-sm">
-            ⚡
-          </div>
+        <Link
+          href="/"
+          className="flex items-center gap-2.5 hover:opacity-90 transition-opacity"
+        >
+          <svg
+            className="h-8 w-8 lg:h-13 lg:w-13 pb-0.5 text-primary shrink-0"
+            viewBox="0 0 512 512"
+            fill="currentColor"
+            aria-hidden="true"
+          >
+            <defs>
+              <g id="header-sword">
+                <path
+                  d="M 256 16 L 288 52 L 288 388 L 224 388 L 224 52 Z"
+                  fill="currentColor"
+                />
+                <path
+                  d="M 224 388 L 165 348 L 182 414 L 242 414 L 242 422 L 270 422 L 270 414 L 330 414 L 347 348 L 288 388 Z"
+                  fill="currentColor"
+                />
+                <rect
+                  x="244"
+                  y="422"
+                  width="24"
+                  height="68"
+                  rx="3"
+                  fill="currentColor"
+                />
+                <circle cx="256" cy="496" r="22" fill="currentColor" />
+              </g>
+            </defs>
+            <circle
+              cx="256"
+              cy="256"
+              r="236"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="16"
+            />
+            <use href="#header-sword" transform="rotate(-45 256 256)" />
+            <use href="#header-sword" transform="rotate(45 256 256)" />
+          </svg>
           <div>
-            <span className="font-extrabold tracking-tight text-foreground text-lg sm:text-xl">
+            <span className="font-extrabold tracking-tight text-foreground text-lg sm:text-xl lg:text-3xl">
               Quiz Battle
             </span>
-            <span className="ml-2 hidden text-xs font-medium text-accent sm:inline-block">
+            <span className="ml-2 hidden text-xs font-medium text-accent sm:inline-block lg:text-xl">
               1v1 Trivia
             </span>
           </div>
-        </div>
+        </Link>
 
         {/* Auth / Profile Area */}
         <div className="flex items-center gap-3">
@@ -34,7 +73,10 @@ export async function LandingHeader() {
               {/* Stats Counters */}
               <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/60 px-3 py-1.5 text-xs font-medium">
                 <span className="text-muted-foreground">
-                  Matches: <strong className="text-foreground">{stats?.totalMatches ?? 0}</strong>
+                  Matches:{" "}
+                  <strong className="text-foreground">
+                    {stats?.totalMatches ?? 0}
+                  </strong>
                 </span>
                 <span className="text-border">|</span>
                 <span className="text-success font-semibold">

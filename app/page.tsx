@@ -13,7 +13,7 @@ export default async function Home() {
     <div className="flex min-h-screen flex-col bg-background text-foreground font-sans">
       <LandingHeader />
 
-      <main className="flex flex-1 flex-col items-center justify-center px-4 py-12 text-center sm:px-6 sm:py-16">
+      <main className="flex flex-1 flex-col items-center justify-start px-4 py-12 text-center sm:px-6 sm:py-35">
         <div className="mx-auto flex max-w-2xl flex-col items-center space-y-6">
           <div className="inline-flex items-center gap-2 rounded-full border border-border bg-card px-3 py-1 text-xs font-semibold text-accent shadow-xs">
             <span>⚔️</span> Real-Time 1v1 Trivia Battle
@@ -25,8 +25,8 @@ export default async function Home() {
           </h1>
 
           <p className="mx-auto max-w-xl text-base sm:text-lg text-muted-foreground">
-            Race to 6 correct answers in live trivia Matches. Real-time countdowns,
-            synced questions, and competitive lifetime records.
+            Challenge your friends and show off your trivia skills in
+            fast-paced, real-time battles.
           </p>
 
           <div className="flex w-full justify-center pt-2">
