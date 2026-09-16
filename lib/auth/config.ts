@@ -11,10 +11,24 @@ import {
   getUserProfileWithStats,
 } from "@/lib/auth/user-service";
 
+/**
+ * Feature flag / helper to check if dev mock authentication is enabled.
+ * - If ENABLE_DEV_MOCK_AUTH is explicitly set ("true" / "false"), respects the env variable.
+ * - Otherwise, defaults to true in non-production environments and false in production.
+ */
+export function isDevMockAuthEnabled(override?: boolean): boolean {
+  if (typeof override === "boolean") return override;
+  if (process.env.ENABLE_DEV_MOCK_AUTH !== undefined) {
+    return process.env.ENABLE_DEV_MOCK_AUTH === "true";
+  }
+  return process.env.NODE_ENV !== "production";
+}
+
 export interface ResolveAuthProvidersParams {
   nodeEnv?: string;
   googleClientId?: string;
   googleClientSecret?: string;
+  enableDevMock?: boolean;
 }
 
 export function resolveAuthProviders(params: ResolveAuthProvidersParams) {
@@ -27,7 +41,14 @@ export function resolveAuthProviders(params: ResolveAuthProvidersParams) {
         clientSecret: params.googleClientSecret,
       })
     );
-  } else if (params.nodeEnv !== "production") {
+  }
+
+  const shouldEnableDevMock =
+    params.enableDevMock !== undefined
+      ? params.enableDevMock
+      : isDevMockAuthEnabled();
+
+  if (shouldEnableDevMock) {
     providers.push(
       Credentials({
         id: "dev-mock-login",
@@ -42,8 +63,9 @@ export function resolveAuthProviders(params: ResolveAuthProvidersParams) {
         },
         async authorize(credentials) {
           const email =
-            (credentials?.email as string) || "dev@quizbattle.local";
-          const name = (credentials?.name as string) || "Dev Player";
+            ((credentials?.email as string)?.trim()) || "dev@quizbattle.local";
+          const name =
+            ((credentials?.name as string)?.trim()) || "Dev Player";
           const user = await getOrCreateUser({
             email,
             name,

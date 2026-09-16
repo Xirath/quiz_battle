@@ -2,11 +2,13 @@ import Image from "next/image";
 import Link from "next/link";
 import { auth } from "@/auth";
 import { SignInButton, SignOutButton } from "@/components/auth-buttons";
+import { isDevMockAuthEnabled } from "@/lib/auth/config";
 
 export async function LandingHeader() {
   const session = await auth();
   const user = session?.user;
   const stats = user?.stats;
+  const showDevMockLogin = isDevMockAuthEnabled();
 
   return (
     <header className="w-full border-b border-border bg-card text-card-foreground">
@@ -129,7 +131,7 @@ export async function LandingHeader() {
                 </svg>
                 Continue with Google
               </SignInButton>
-              {process.env.NODE_ENV !== "production" && (
+              {showDevMockLogin && (
                 <SignInButton
                   provider="dev-mock-login"
                   className="border border-border bg-secondary text-secondary-foreground hover:bg-secondary-hover text-xs py-2 px-3 font-normal"
