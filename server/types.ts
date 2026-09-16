@@ -30,13 +30,34 @@ export interface ClientQuestion {
   options: string[];
 }
 
+export interface CategoryItem {
+  id: number;
+  name: string;
+}
+
+export interface CategoryBanState {
+  categories: CategoryItem[];
+  bannedCategoryIds: number[];
+  currentBanningPlayerId: string;
+  turnNumber: number;
+  turnDurationMs: number;
+  turnDeadline: number;
+  banHistory: Array<{
+    categoryId: number;
+    bannedByPlayerId: string;
+    bannedByPlayerName?: string;
+  }>;
+  selectedCategory?: CategoryItem | null;
+  pausedRemainingMs?: number;
+}
+
 export interface MatchState {
   roomCode: string;
   questions: MatchQuestion[];
   currentRoundNumber: number;
   hostScore: number;
   challengerScore: number;
-  status: "countdown" | "in_round" | "round_ended" | "ROUND_RESULT" | "match_ended" | "FORFEIT";
+  status: "ban_phase" | "countdown" | "in_round" | "round_ended" | "ROUND_RESULT" | "match_ended" | "FORFEIT";
   countdownSeconds?: number;
   hostAnswer?: string | null;
   challengerAnswer?: string | null;
@@ -47,6 +68,8 @@ export interface MatchState {
   rematchRequests?: Set<string>;
   disconnectedPlayerId?: string | null;
   disconnectTimestamp?: number | null;
+  banState?: CategoryBanState | null;
+  selectedCategory?: CategoryItem | null;
 }
 
 export interface RoundResultPayload {
@@ -74,6 +97,7 @@ export interface MatchEndPayload {
   isForfeit?: boolean;
   host?: AuthenticatedUser;
   challenger?: AuthenticatedUser | null;
+  selectedCategory?: CategoryItem | null;
 }
 
 export interface MatchRestorePayload {
@@ -88,6 +112,8 @@ export interface MatchRestorePayload {
   roundResult: RoundResultPayload | null;
   opponentDisconnected?: boolean;
   disconnectCountdown?: number;
+  banState?: CategoryBanState | null;
+  selectedCategory?: CategoryItem | null;
 }
 
 export interface SocketData {
@@ -102,6 +128,9 @@ export interface ServerToClientEvents {
   "room:player_joined": (data: { player: AuthenticatedUser; room: RoomState }) => void;
   "room:player_left": (data: { playerId: string; room: RoomState }) => void;
   "room:error": (data: { message: string }) => void;
+  "match:ban_phase_start": (data: CategoryBanState) => void;
+  "match:category_banned": (data: CategoryBanState) => void;
+  "match:category_decided": (data: { category: CategoryItem }) => void;
   "match:countdown": (data: { count: number; text: string }) => void;
   "round:start": (data: {
     roundNumber: number;
@@ -110,6 +139,7 @@ export interface ServerToClientEvents {
     challengerScore?: number;
     startTime?: number;
     isSuddenDeath?: boolean;
+    selectedCategory?: CategoryItem | null;
   }) => void;
   "player:answered": (data: { playerId: string }) => void;
   "round:result": (data: RoundResultPayload) => void;
@@ -135,6 +165,10 @@ export interface ClientToServerEvents {
     callback: (res: { success: boolean; room?: RoomState; error?: string }) => void
   ) => void;
   "room:leave": (data: { code: string }) => void;
+  "player:ban_category": (
+    data: { roomCode: string; categoryId: number },
+    callback?: (res: { success: boolean; error?: string }) => void
+  ) => void;
   "player:submit_answer": (
     data: { roomCode: string; roundNumber: number; answer: string },
     callback?: (res: { success: boolean; error?: string }) => void

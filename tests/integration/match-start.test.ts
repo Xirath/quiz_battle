@@ -45,7 +45,9 @@ describe("Match Start & Countdown Synchronization Integration", () => {
       port: 0,
       secret: TEST_SECRET,
       corsOrigin: "http://localhost:3000",
-      countdownIntervalMs: 50, // Accelerated countdown interval for fast integration tests
+      countdownIntervalMs: 20, // Accelerated countdown interval for fast integration tests
+      banTurnDurationMs: 100,
+      categoryRevealDurationMs: 20,
     });
 
     const address = await serverInstance.listen();
@@ -81,7 +83,7 @@ describe("Match Start & Countdown Synchronization Integration", () => {
     });
   };
 
-  it("automatically starts match, emits synchronized countdown (3,2,1,GO!), and delivers Round 1 question without answer key", async () => {
+  it("automatically starts ban phase with 5 categories, processes veto turns, decides final category, and delivers Round 1 question", async () => {
     const hostSocket = createSocket(hostToken);
     const challengerSocket = createSocket(challengerToken);
 
@@ -108,6 +110,16 @@ describe("Match Start & Countdown Synchronization Integration", () => {
         hostSocket.emit("room:join", { code: roomCode }, (res) => {
           if (res.success) resolve();
           else reject(new Error(res.error));
+        });
+      });
+
+      // Track ban phase start
+      const hostBanStartPromise = new Promise<{
+        categories: Array<{ id: number; name: string }>;
+        currentBanningPlayerId: string;
+      }>((resolve) => {
+        hostSocket.once("match:ban_phase_start", (data) => {
+          resolve(data);
         });
       });
 
@@ -139,6 +151,45 @@ describe("Match Start & Countdown Synchronization Integration", () => {
       // 2. Challenger joins room
       await new Promise<void>((resolve, reject) => {
         challengerSocket.emit("room:join", { code: roomCode }, (res) => {
+          if (res.success) resolve();
+          else reject(new Error(res.error));
+        });
+      });
+
+      // Wait for ban phase to start
+      const banStartData = await hostBanStartPromise;
+      expect(banStartData.categories).toHaveLength(5);
+      expect(banStartData.currentBanningPlayerId).toBe("player-host-match-1");
+
+      const cats = banStartData.categories;
+
+      // Turn 1: Host vetoes category 0
+      await new Promise<void>((resolve, reject) => {
+        hostSocket.emit("player:ban_category", { roomCode, categoryId: cats[0].id }, (res) => {
+          if (res.success) resolve();
+          else reject(new Error(res.error));
+        });
+      });
+
+      // Turn 2: Challenger vetoes category 1
+      await new Promise<void>((resolve, reject) => {
+        challengerSocket.emit("player:ban_category", { roomCode, categoryId: cats[1].id }, (res) => {
+          if (res.success) resolve();
+          else reject(new Error(res.error));
+        });
+      });
+
+      // Turn 3: Host vetoes category 2
+      await new Promise<void>((resolve, reject) => {
+        hostSocket.emit("player:ban_category", { roomCode, categoryId: cats[2].id }, (res) => {
+          if (res.success) resolve();
+          else reject(new Error(res.error));
+        });
+      });
+
+      // Turn 4: Challenger vetoes category 3 (Category 4 should be final winner!)
+      await new Promise<void>((resolve, reject) => {
+        challengerSocket.emit("player:ban_category", { roomCode, categoryId: cats[3].id }, (res) => {
           if (res.success) resolve();
           else reject(new Error(res.error));
         });
@@ -176,9 +227,10 @@ describe("Match Start & Countdown Synchronization Integration", () => {
       expect("correct_answer" in hostRoundData.question).toBe(false);
       expect((hostRoundData.question as unknown as Record<string, unknown>).correctAnswer).toBeUndefined();
 
-      // Verify server keeps correct answer in memory
+      // Verify server keeps correct answer in memory and records selected category
       const match = serverInstance.roomManager.getMatch(roomCode);
       expect(match).not.toBeNull();
+      expect(match?.selectedCategory).toEqual(cats[4]);
       expect(match?.questions).toHaveLength(20);
       expect(match?.questions[0].correctAnswer).toBeDefined();
       expect(match?.questions[0].options).toContain(match?.questions[0].correctAnswer);

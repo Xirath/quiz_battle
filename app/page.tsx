@@ -2,6 +2,7 @@ import { LandingHeader } from "@/components/landing-header";
 import { auth } from "@/auth";
 import { SignInButton } from "@/components/auth-buttons";
 import { RoomActions } from "@/components/room-actions";
+import { ConnectionStatusBadge } from "@/components/connection-status";
 
 export const dynamic = "force-dynamic";
 
@@ -41,6 +42,7 @@ export default async function Home() {
               </SignInButton>
             )}
           </div>
+          <ConnectionStatusBadge className="me-2 " />
         </div>
       </main>
     </div>

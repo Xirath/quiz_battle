@@ -6,6 +6,8 @@ import type {
   RoundResultPayload,
   MatchEndPayload,
   MatchRestorePayload,
+  CategoryItem,
+  CategoryBanState,
 } from "./types";
 
 const CODE_CHARS = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
@@ -149,6 +151,158 @@ export class RoomManager {
       winnerId: null,
       rematchRequests: new Set<string>(),
     };
+  }
+
+  public initBanPhase(
+    code: string,
+    categories: CategoryItem[],
+    turnDurationMs = 10000
+  ): CategoryBanState {
+    const normalizedCode = this.normalizeCode(code);
+    const room = this.rooms.get(normalizedCode);
+    if (!room || !room.challenger) {
+      throw new Error("Room is not ready for ban phase");
+    }
+
+    room.status = "in_match";
+
+    const banState: CategoryBanState = {
+      categories: [...categories],
+      bannedCategoryIds: [],
+      currentBanningPlayerId: room.host.id,
+      turnNumber: 1,
+      turnDurationMs,
+      turnDeadline: Date.now() + turnDurationMs,
+      banHistory: [],
+      selectedCategory: null,
+    };
+
+    const match: MatchState = {
+      roomCode: normalizedCode,
+      questions: [],
+      currentRoundNumber: 1,
+      hostScore: 0,
+      challengerScore: 0,
+      status: "ban_phase",
+      isSuddenDeath: false,
+      winnerId: null,
+      rematchRequests: new Set<string>(),
+      banState,
+      selectedCategory: null,
+    };
+
+    this.matches.set(normalizedCode, match);
+    return { ...banState };
+  }
+
+  public banCategory(
+    code: string,
+    playerId: string,
+    categoryId: number,
+    turnDurationMs = 10000
+  ): { banState: CategoryBanState; isComplete: boolean; selectedCategory?: CategoryItem } {
+    const normalizedCode = this.normalizeCode(code);
+    const room = this.rooms.get(normalizedCode);
+    const match = this.matches.get(normalizedCode);
+
+    if (!room || !match || !match.banState) {
+      throw new Error("Ban phase is not active");
+    }
+
+    const { banState } = match;
+
+    if (banState.currentBanningPlayerId !== playerId) {
+      throw new Error("Not your turn to ban");
+    }
+
+    const categoryExists = banState.categories.some((c) => c.id === categoryId);
+    if (!categoryExists) {
+      throw new Error("Invalid category");
+    }
+
+    if (banState.bannedCategoryIds.includes(categoryId)) {
+      throw new Error("Category is already banned");
+    }
+
+    const player = room.host.id === playerId ? room.host : room.challenger;
+    const playerName = player?.name ?? (room.host.id === playerId ? "Host" : "Challenger");
+
+    banState.bannedCategoryIds.push(categoryId);
+    banState.banHistory.push({
+      categoryId,
+      bannedByPlayerId: playerId,
+      bannedByPlayerName: playerName,
+    });
+
+    if (banState.bannedCategoryIds.length >= 4) {
+      const selected = banState.categories.find(
+        (c) => !banState.bannedCategoryIds.includes(c.id)
+      );
+      if (!selected) {
+        throw new Error("No category remaining");
+      }
+      banState.selectedCategory = selected;
+      match.selectedCategory = selected;
+      return {
+        banState: { ...banState },
+        isComplete: true,
+        selectedCategory: selected,
+      };
+    }
+
+    banState.turnNumber += 1;
+    // Turn sequence: 1 (Host), 2 (Challenger), 3 (Host), 4 (Challenger)
+    banState.currentBanningPlayerId =
+      banState.turnNumber % 2 === 1 ? room.host.id : room.challenger!.id;
+    banState.turnDeadline = Date.now() + turnDurationMs;
+
+    return {
+      banState: { ...banState },
+      isComplete: false,
+    };
+  }
+
+  public autoBanCategory(
+    code: string,
+    turnDurationMs = 10000
+  ): { banState: CategoryBanState; isComplete: boolean; selectedCategory?: CategoryItem } {
+    const normalizedCode = this.normalizeCode(code);
+    const match = this.matches.get(normalizedCode);
+
+    if (!match || !match.banState) {
+      throw new Error("Ban phase is not active");
+    }
+
+    const { banState } = match;
+    const remainingCategories = banState.categories.filter(
+      (c) => !banState.bannedCategoryIds.includes(c.id)
+    );
+
+    if (remainingCategories.length === 0) {
+      throw new Error("No remaining categories to ban");
+    }
+
+    const randomIndex = Math.floor(Math.random() * remainingCategories.length);
+    const categoryToBan = remainingCategories[randomIndex];
+
+    return this.banCategory(
+      code,
+      banState.currentBanningPlayerId,
+      categoryToBan.id,
+      turnDurationMs
+    );
+  }
+
+  public setMatchQuestions(code: string, questions: MatchQuestion[]): MatchState {
+    const normalizedCode = this.normalizeCode(code);
+    const match = this.matches.get(normalizedCode);
+    if (!match) {
+      throw new Error("Match not found");
+    }
+    match.questions = [...questions];
+    match.status = "countdown";
+    match.countdownSeconds = 3;
+    return { ...match };
   }
 
   public startMatch(code: string, questions: MatchQuestion[]): MatchState {
@@ -421,6 +575,10 @@ export class RoomManager {
     if (isMatchActive && match) {
       match.disconnectedPlayerId = playerId;
       match.disconnectTimestamp = Date.now();
+      if (match.status === "ban_phase" && match.banState) {
+        const remainingMs = Math.max(1000, match.banState.turnDeadline - Date.now());
+        match.banState.pausedRemainingMs = remainingMs;
+      }
       const remainingPlayer = room.host.id === playerId ? (room.challenger ?? undefined) : room.host;
       return { isMatchActive: true, match: { ...match }, remainingPlayer };
     }
@@ -436,6 +594,11 @@ export class RoomManager {
     if (match.disconnectedPlayerId === playerId) {
       match.disconnectedPlayerId = null;
       match.disconnectTimestamp = null;
+      if (match.status === "ban_phase" && match.banState) {
+        const remaining = match.banState.pausedRemainingMs ?? match.banState.turnDurationMs;
+        match.banState.turnDeadline = Date.now() + remaining;
+        delete match.banState.pausedRemainingMs;
+      }
     }
 
     return { ...match };
@@ -536,6 +699,8 @@ export class RoomManager {
       opponentLockedIn,
       roundResult,
       opponentDisconnected,
+      banState: match.banState ? { ...match.banState } : null,
+      selectedCategory: match.selectedCategory ?? null,
     };
   }
 }

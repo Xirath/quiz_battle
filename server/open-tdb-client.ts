@@ -1,5 +1,41 @@
 import { decode } from "html-entities";
-import type { MatchQuestion, ClientQuestion } from "./types";
+import type { MatchQuestion, ClientQuestion, CategoryItem } from "./types";
+
+export const OPENTDB_CATEGORIES: CategoryItem[] = [
+  { id: 9, name: "General Knowledge" },
+  { id: 10, name: "Entertainment: Books" },
+  { id: 11, name: "Entertainment: Film" },
+  { id: 12, name: "Entertainment: Music" },
+  { id: 13, name: "Entertainment: Musicals & Theatres" },
+  { id: 14, name: "Entertainment: Television" },
+  { id: 15, name: "Entertainment: Video Games" },
+  { id: 16, name: "Entertainment: Board Games" },
+  { id: 17, name: "Science & Nature" },
+  { id: 18, name: "Science: Computers" },
+  { id: 19, name: "Science: Mathematics" },
+  { id: 20, name: "Mythology" },
+  { id: 21, name: "Sports" },
+  { id: 22, name: "Geography" },
+  { id: 23, name: "History" },
+  { id: 24, name: "Politics" },
+  { id: 25, name: "Art" },
+  { id: 26, name: "Celebrities" },
+  { id: 27, name: "Animals" },
+  { id: 28, name: "Vehicles" },
+  { id: 29, name: "Entertainment: Comics" },
+  { id: 30, name: "Science: Gadgets" },
+  { id: 31, name: "Entertainment: Japanese Anime & Manga" },
+  { id: 32, name: "Entertainment: Cartoon & Animations" },
+];
+
+export function getRandomCategories(count = 5): CategoryItem[] {
+  const shuffled = shuffleArray(OPENTDB_CATEGORIES);
+  return shuffled.slice(0, count);
+}
+
+export function getCategoryById(id: number): CategoryItem | undefined {
+  return OPENTDB_CATEGORIES.find((cat) => cat.id === id);
+}
 
 export interface OpenTdbRawQuestion {
   type: string;
@@ -203,11 +239,14 @@ export class OpenTdbClient {
     }
   }
 
-  public async fetchQuestions(amount = 20): Promise<MatchQuestion[]> {
+  public async fetchQuestions(amount = 20, categoryId?: number): Promise<MatchQuestion[]> {
     const token = await this.getSessionToken();
     const url = new URL("https://opentdb.com/api.php");
     url.searchParams.set("amount", String(amount));
     url.searchParams.set("type", "multiple");
+    if (categoryId !== undefined) {
+      url.searchParams.set("category", String(categoryId));
+    }
     if (token) {
       url.searchParams.set("token", token);
     }
@@ -249,7 +288,7 @@ export class OpenTdbClient {
     }
 
     // Fallback to curated pool if rate-limited (code 5) or unreachable
-    return this.getFallbackQuestions(amount);
+    return this.getFallbackQuestions(amount, categoryId);
   }
 
   private formatMatchQuestion(
@@ -289,8 +328,26 @@ export class OpenTdbClient {
     );
   }
 
-  private getFallbackQuestions(amount: number): MatchQuestion[] {
-    const shuffled = shuffleArray(FALLBACK_QUESTIONS);
+  private getFallbackQuestions(amount: number, categoryId?: number): MatchQuestion[] {
+    let pool = [...FALLBACK_QUESTIONS];
+    if (categoryId !== undefined) {
+      const targetCat = getCategoryById(categoryId);
+      if (targetCat) {
+        const filtered = pool.filter(
+          (q) =>
+            q.category.toLowerCase() === targetCat.name.toLowerCase() ||
+            q.category.toLowerCase().startsWith(targetCat.name.toLowerCase()) ||
+            targetCat.name.toLowerCase().startsWith(q.category.toLowerCase())
+        );
+        if (filtered.length > 0) {
+          // If we have category matches, prioritize them and backfill with general if needed
+          const remaining = pool.filter((q) => !filtered.includes(q));
+          pool = [...shuffleArray(filtered), ...shuffleArray(remaining)];
+        }
+      }
+    }
+
+    const shuffled = pool === FALLBACK_QUESTIONS ? shuffleArray(FALLBACK_QUESTIONS) : pool;
     const selected = shuffled.slice(0, Math.min(amount, shuffled.length));
 
     return selected.map((item, index) =>

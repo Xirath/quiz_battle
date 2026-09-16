@@ -48,6 +48,8 @@ describe("Round Lifecycle & Early Reveal Integration", () => {
       roundDurationMs: 200,   // Fast 200ms round timer for test
       earlyRevealDebounceMs: 40, // 40ms early reveal debounce
       roundRevealDurationMs: 60, // 60ms reveal intermission
+      banTurnDurationMs: 20,
+      categoryRevealDurationMs: 20,
     });
 
     const address = await serverInstance.listen();

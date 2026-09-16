@@ -3,13 +3,18 @@ import type { AddressInfo } from "node:net";
 import { Server as SocketIOServer } from "socket.io";
 import { createAuthMiddleware } from "./auth-middleware";
 import { RoomManager, defaultRoomManager } from "./room-manager";
-import { OpenTdbClient, defaultOpenTdbClient } from "./open-tdb-client";
+import {
+  OpenTdbClient,
+  defaultOpenTdbClient,
+  getRandomCategories,
+} from "./open-tdb-client";
 import { recordMatchResult, type RecordMatchParams } from "@/lib/match-service";
 import type {
   ClientToServerEvents,
   ServerToClientEvents,
   SocketData,
   MatchEndPayload,
+  CategoryItem,
 } from "./types";
 
 export interface GameServerOptions {
@@ -23,20 +28,35 @@ export interface GameServerOptions {
   earlyRevealDebounceMs?: number;
   roundRevealDurationMs?: number;
   disconnectGracePeriodMs?: number;
+  banTurnDurationMs?: number;
+  categoryRevealDurationMs?: number;
   onMatchEnd?: (params: RecordMatchParams) => Promise<unknown> | void;
 }
 
 export function createGameServer(options: GameServerOptions = {}) {
-  const port = options.port ?? (process.env.PORT ? parseInt(process.env.PORT, 10) : 3001);
+  const port =
+    options.port ?? (process.env.PORT ? parseInt(process.env.PORT, 10) : 3001);
   const corsOrigin =
     options.corsOrigin ?? process.env.CLIENT_ORIGIN ?? "http://localhost:3000";
-  const roomManager = options.roomManager ?? (options.port === 0 ? new RoomManager() : defaultRoomManager);
+  const roomManager =
+    options.roomManager ??
+    (options.port === 0 ? new RoomManager() : defaultRoomManager);
   const openTdbClient = options.openTdbClient ?? defaultOpenTdbClient;
   const countdownIntervalMs = options.countdownIntervalMs ?? 1000;
   const roundDurationMs = options.roundDurationMs ?? 15000;
   const earlyRevealDebounceMs = options.earlyRevealDebounceMs ?? 500;
   const roundRevealDurationMs = options.roundRevealDurationMs ?? 4000;
   const disconnectGracePeriodMs = options.disconnectGracePeriodMs ?? 30000;
+  const banTurnDurationMs =
+    options.banTurnDurationMs ??
+    (process.env.BAN_TURN_DURATION_MS
+      ? parseInt(process.env.BAN_TURN_DURATION_MS, 10)
+      : 15000);
+  const categoryRevealDurationMs =
+    options.categoryRevealDurationMs ??
+    (process.env.CATEGORY_REVEAL_DURATION_MS
+      ? parseInt(process.env.CATEGORY_REVEAL_DURATION_MS, 10)
+      : 5000);
 
   const activeTimers = new Map<string, NodeJS.Timeout[]>();
   const disconnectTimers = new Map<string, NodeJS.Timeout>();
@@ -62,7 +82,9 @@ export function createGameServer(options: GameServerOptions = {}) {
     // Health check endpoint
     if (req.url === "/health" && req.method === "GET") {
       res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ status: "ok", service: "quiz-battle-game-server" }));
+      res.end(
+        JSON.stringify({ status: "ok", service: "quiz-battle-game-server" }),
+      );
       return;
     }
 
@@ -95,7 +117,10 @@ export function createGameServer(options: GameServerOptions = {}) {
       }
     } catch (err) {
       if (process.env.NODE_ENV !== "test") {
-        console.error(`[GameServer] Failed to persist match result for room ${params.roomCode}:`, err);
+        console.error(
+          `[GameServer] Failed to persist match result for room ${params.roomCode}:`,
+          err,
+        );
       }
     }
   };
@@ -105,12 +130,19 @@ export function createGameServer(options: GameServerOptions = {}) {
     if (!next) {
       // Prolonged sudden death: fetch more questions
       try {
-        const extraQuestions = await openTdbClient.fetchQuestions(10);
+        const match = roomManager.getMatch(roomCode);
+        const extraQuestions = await openTdbClient.fetchQuestions(
+          10,
+          match?.selectedCategory?.id,
+        );
         roomManager.addQuestions(roomCode, extraQuestions);
         next = roomManager.nextRound(roomCode);
       } catch (e) {
         if (process.env.NODE_ENV !== "test") {
-          console.error(`[GameServer] Failed to fetch extra questions for sudden death:`, e);
+          console.error(
+            `[GameServer] Failed to fetch extra questions for sudden death:`,
+            e,
+          );
         }
       }
     }
@@ -139,8 +171,8 @@ export function createGameServer(options: GameServerOptions = {}) {
         result.winnerId === room?.host.id
           ? (room?.host.name ?? "Host")
           : result.winnerId === room?.challenger?.id
-          ? (room?.challenger?.name ?? "Challenger")
-          : null;
+            ? (room?.challenger?.name ?? "Challenger")
+            : null;
 
       const endPayload: MatchEndPayload = {
         roomCode,
@@ -153,6 +185,8 @@ export function createGameServer(options: GameServerOptions = {}) {
         isForfeit: false,
         host: room ? { ...room.host } : undefined,
         challenger: room?.challenger ? { ...room.challenger } : null,
+        selectedCategory:
+          roomManager.getMatch(roomCode)?.selectedCategory ?? null,
       };
 
       io.to(`room:${roomCode}`).emit("match:end", endPayload);
@@ -201,6 +235,7 @@ export function createGameServer(options: GameServerOptions = {}) {
       challengerScore: match.challengerScore,
       startTime: match.roundStartTime,
       isSuddenDeath: match.isSuddenDeath,
+      selectedCategory: match.selectedCategory ?? null,
     });
 
     const expirationTimer = setTimeout(() => {
@@ -210,69 +245,164 @@ export function createGameServer(options: GameServerOptions = {}) {
     activeTimers.set(roomCode, [expirationTimer]);
   };
 
-  const startMatchSequence = (roomCode: string, isRematch = false) => {
+  const scheduleBanTimer = (roomCode: string, durationMs?: number) => {
+    clearRoomTimers(roomCode);
+    const delay = durationMs ?? banTurnDurationMs;
+    const timer = setTimeout(() => {
+      handleAutoBan(roomCode);
+    }, delay);
+    activeTimers.set(roomCode, [timer]);
+  };
+
+  const handleAutoBan = async (roomCode: string) => {
+    try {
+      const match = roomManager.getMatch(roomCode);
+      if (!match || match.status !== "ban_phase") return;
+
+      const result = roomManager.autoBanCategory(roomCode, banTurnDurationMs);
+      if (!result.isComplete) {
+        io.to(`room:${roomCode}`).emit(
+          "match:category_banned",
+          result.banState,
+        );
+        scheduleBanTimer(roomCode);
+      } else {
+        clearRoomTimers(roomCode);
+        io.to(`room:${roomCode}`).emit(
+          "match:category_banned",
+          result.banState,
+        );
+        if (result.selectedCategory) {
+          io.to(`room:${roomCode}`).emit("match:category_decided", {
+            category: result.selectedCategory,
+          });
+          startMatchCountdownSequence(roomCode, result.selectedCategory);
+        }
+      }
+    } catch (err) {
+      if (process.env.NODE_ENV !== "test") {
+        console.error(
+          `[GameServer] Failed to auto-ban category for room ${roomCode}:`,
+          err,
+        );
+      }
+    }
+  };
+
+  const handleBanSelection = async (
+    roomCode: string,
+    playerId: string,
+    categoryId: number,
+  ) => {
+    const result = roomManager.banCategory(
+      roomCode,
+      playerId,
+      categoryId,
+      banTurnDurationMs,
+    );
+    if (!result.isComplete) {
+      io.to(`room:${roomCode}`).emit("match:category_banned", result.banState);
+      scheduleBanTimer(roomCode);
+    } else {
+      clearRoomTimers(roomCode);
+      io.to(`room:${roomCode}`).emit("match:category_banned", result.banState);
+      if (result.selectedCategory) {
+        io.to(`room:${roomCode}`).emit("match:category_decided", {
+          category: result.selectedCategory,
+        });
+        startMatchCountdownSequence(roomCode, result.selectedCategory);
+      }
+    }
+  };
+
+  const startBanPhaseSequence = (roomCode: string) => {
     clearRoomTimers(roomCode);
     const room = roomManager.getRoom(roomCode);
     if (!room || !room.challenger) {
       return;
     }
-    if (!isRematch && room.status !== "ready") {
-      return;
+
+    const categories = getRandomCategories(5);
+    const banState = roomManager.initBanPhase(
+      roomCode,
+      categories,
+      banTurnDurationMs,
+    );
+
+    const updatedRoom = roomManager.getRoom(roomCode);
+    if (updatedRoom) {
+      io.to(`room:${roomCode}`).emit("room:state", updatedRoom);
     }
 
+    io.to(`room:${roomCode}`).emit("match:ban_phase_start", banState);
+    scheduleBanTimer(roomCode);
+  };
+
+  const startMatchCountdownSequence = (
+    roomCode: string,
+    selectedCategory: CategoryItem,
+  ) => {
+    clearRoomTimers(roomCode);
     const timers: NodeJS.Timeout[] = [];
     activeTimers.set(roomCode, timers);
 
-    // Concurrently initiate question pre-fetching so network latency does not block immediate countdown
-    const questionsPromise = openTdbClient.fetchQuestions(20);
+    // Concurrently initiate question pre-fetching for the winning category
+    const questionsPromise = openTdbClient.fetchQuestions(
+      20,
+      selectedCategory.id,
+    );
 
-    // Synchronized 3-second countdown: 3 (0s) -> 2 (1s) -> 1 (2s) -> GO! (3s)
-    const countdownTicks = [
-      { count: 3, text: "3", delay: 0 },
-      { count: 2, text: "2", delay: countdownIntervalMs },
-      { count: 1, text: "1", delay: countdownIntervalMs * 2 },
-      { count: 0, text: "GO!", delay: countdownIntervalMs * 3 },
-    ];
+    // Wait categoryRevealDurationMs before triggering countdown
+    const preCountdownTimer = setTimeout(() => {
+      // Synchronized 3-second countdown: 3 (0s) -> 2 (1s) -> 1 (2s) -> GO! (3s)
+      const countdownTicks = [
+        { count: 3, text: "3", delay: 0 },
+        { count: 2, text: "2", delay: countdownIntervalMs },
+        { count: 1, text: "1", delay: countdownIntervalMs * 2 },
+        { count: 0, text: "GO!", delay: countdownIntervalMs * 3 },
+      ];
 
-    countdownTicks.forEach(({ count, text, delay }) => {
-      const timer = setTimeout(() => {
-        io.to(`room:${roomCode}`).emit("match:countdown", { count, text });
-      }, delay);
-      timers.push(timer);
-    });
+      countdownTicks.forEach(({ count, text, delay }) => {
+        const timer = setTimeout(() => {
+          io.to(`room:${roomCode}`).emit("match:countdown", { count, text });
+        }, delay);
+        timers.push(timer);
+      });
 
-    // Deliver Round 1 upon countdown finish (at exactly 3s / countdownIntervalMs * 3)
-    const roundStartTimer = setTimeout(async () => {
-      try {
-        const currentRoom = roomManager.getRoom(roomCode);
-        if (!currentRoom || !currentRoom.challenger) {
-          return;
+      // Deliver Round 1 upon countdown finish (at exactly 3s / countdownIntervalMs * 3)
+      const roundStartTimer = setTimeout(async () => {
+        try {
+          const currentRoom = roomManager.getRoom(roomCode);
+          if (!currentRoom || !currentRoom.challenger) {
+            return;
+          }
+
+          const questions = await questionsPromise;
+          roomManager.setMatchQuestions(roomCode, questions);
+
+          const updatedRoom = roomManager.getRoom(roomCode);
+          if (updatedRoom) {
+            io.to(`room:${roomCode}`).emit("room:state", updatedRoom);
+          }
+
+          startRound(roomCode, 1);
+        } catch (err) {
+          if (process.env.NODE_ENV !== "test") {
+            console.error(
+              `[GameServer] Failed to start match for room ${roomCode}:`,
+              err,
+            );
+          }
+          io.to(`room:${roomCode}`).emit("room:error", {
+            message: "Failed to load trivia questions for match",
+          });
         }
+      }, countdownIntervalMs * 3);
 
-        const questions = await questionsPromise;
-        if (isRematch) {
-          roomManager.resetForRematch(roomCode, questions);
-        } else {
-          roomManager.startMatch(roomCode, questions);
-        }
+      timers.push(roundStartTimer);
+    }, categoryRevealDurationMs);
 
-        const updatedRoom = roomManager.getRoom(roomCode);
-        if (updatedRoom) {
-          io.to(`room:${roomCode}`).emit("room:state", updatedRoom);
-        }
-
-        startRound(roomCode, 1);
-      } catch (err) {
-        if (process.env.NODE_ENV !== "test") {
-          console.error(`[GameServer] Failed to start match for room ${roomCode}:`, err);
-        }
-        io.to(`room:${roomCode}`).emit("room:error", {
-          message: "Failed to load trivia questions for match",
-        });
-      }
-    }, countdownIntervalMs * 3);
-
-    timers.push(roundStartTimer);
+    timers.push(preCountdownTimer);
   };
 
   io.on("connection", (socket) => {
@@ -298,7 +428,8 @@ export function createGameServer(options: GameServerOptions = {}) {
         }
         socket.emit("room:state", room);
       } catch (err) {
-        const message = err instanceof Error ? err.message : "Failed to create room";
+        const message =
+          err instanceof Error ? err.message : "Failed to create room";
         if (typeof callback === "function") {
           callback({ success: false, error: message });
         }
@@ -326,7 +457,9 @@ export function createGameServer(options: GameServerOptions = {}) {
 
         // Notify both players of the updated room state and reconnection
         io.to(`room:${room.code}`).emit("room:state", room);
-        io.to(`room:${room.code}`).emit("player:reconnected", { playerId: user.id });
+        io.to(`room:${room.code}`).emit("player:reconnected", {
+          playerId: user.id,
+        });
         io.to(`room:${room.code}`).emit("room:player_joined", {
           player: user,
           room,
@@ -334,7 +467,11 @@ export function createGameServer(options: GameServerOptions = {}) {
 
         // Check if match is already in progress and restore state to the reconnected socket
         const match = roomManager.getMatch(room.code);
-        if (match && match.status !== "match_ended" && match.status !== "FORFEIT") {
+        if (
+          match &&
+          match.status !== "match_ended" &&
+          match.status !== "FORFEIT"
+        ) {
           const roomTimers = activeTimers.get(room.code);
           const hasActiveTimers = Boolean(roomTimers && roomTimers.length > 0);
 
@@ -342,17 +479,59 @@ export function createGameServer(options: GameServerOptions = {}) {
             // Reveal intermission completed while disconnected; advance to next round upon reconnect
             await advanceToNextRound(room.code);
           } else {
-            const restorePayload = roomManager.getMatchRestorePayload(room.code, user.id);
+            if (match.status === "ban_phase" && !hasActiveTimers) {
+              const remainingMs = Math.max(
+                1000,
+                (match.banState?.turnDeadline ?? Date.now()) - Date.now(),
+              );
+              scheduleBanTimer(room.code, remainingMs);
+              if (match.banState) {
+                io.to(`room:${room.code}`).emit(
+                  "match:category_banned",
+                  match.banState,
+                );
+              }
+            }
+            const restorePayload = roomManager.getMatchRestorePayload(
+              room.code,
+              user.id,
+            );
             if (restorePayload) {
               socket.emit("match:restore", restorePayload);
             }
           }
         } else if (room.status === "ready" && room.challenger !== null) {
-          // Automatically trigger synchronized countdown once 2 players are present
-          startMatchSequence(room.code);
+          // Automatically trigger category ban phase once 2 players are present
+          startBanPhaseSequence(room.code);
         }
       } catch (err) {
-        const message = err instanceof Error ? err.message : "Failed to join room";
+        const message =
+          err instanceof Error ? err.message : "Failed to join room";
+        if (typeof callback === "function") {
+          callback({ success: false, error: message });
+        }
+        socket.emit("room:error", { message });
+      }
+    });
+
+    socket.on("player:ban_category", async (data, callback) => {
+      try {
+        const roomCode = data?.roomCode || socket.data.roomCode;
+        if (!roomCode) {
+          throw new Error("Room code is required");
+        }
+        if (data?.categoryId === undefined) {
+          throw new Error("Category ID is required");
+        }
+
+        await handleBanSelection(roomCode, user.id, data.categoryId);
+
+        if (typeof callback === "function") {
+          callback({ success: true });
+        }
+      } catch (err) {
+        const message =
+          err instanceof Error ? err.message : "Failed to ban category";
         if (typeof callback === "function") {
           callback({ success: false, error: message });
         }
@@ -374,7 +553,7 @@ export function createGameServer(options: GameServerOptions = {}) {
           roomCode,
           user.id,
           data.roundNumber,
-          data.answer
+          data.answer,
         );
 
         if (typeof callback === "function") {
@@ -395,7 +574,8 @@ export function createGameServer(options: GameServerOptions = {}) {
           activeTimers.set(roomCode, [debounceTimer]);
         }
       } catch (err) {
-        const message = err instanceof Error ? err.message : "Failed to submit answer";
+        const message =
+          err instanceof Error ? err.message : "Failed to submit answer";
         if (typeof callback === "function") {
           callback({ success: false, error: message });
         }
@@ -410,7 +590,10 @@ export function createGameServer(options: GameServerOptions = {}) {
           throw new Error("Room code is required");
         }
 
-        const { requestedBy, bothReady } = roomManager.requestRematch(roomCode, user.id);
+        const { requestedBy, bothReady } = roomManager.requestRematch(
+          roomCode,
+          user.id,
+        );
 
         if (typeof callback === "function") {
           callback({ success: true });
@@ -419,10 +602,11 @@ export function createGameServer(options: GameServerOptions = {}) {
         io.to(`room:${roomCode}`).emit("match:rematch_status", { requestedBy });
 
         if (bothReady) {
-          startMatchSequence(roomCode, true);
+          startBanPhaseSequence(roomCode);
         }
       } catch (err) {
-        const message = err instanceof Error ? err.message : "Failed to request rematch";
+        const message =
+          err instanceof Error ? err.message : "Failed to request rematch";
         if (typeof callback === "function") {
           callback({ success: false, error: message });
         }
@@ -439,7 +623,7 @@ export function createGameServer(options: GameServerOptions = {}) {
 
         const match = roomManager.getMatch(code);
         const isMatchActive = Boolean(
-          match && match.status !== "match_ended" && match.status !== "FORFEIT"
+          match && match.status !== "match_ended" && match.status !== "FORFEIT",
         );
 
         if (isMatchActive) {
@@ -448,7 +632,11 @@ export function createGameServer(options: GameServerOptions = {}) {
           if (forfeitEnd) {
             io.to(`room:${code}`).emit("match:end", forfeitEnd);
 
-            if (forfeitEnd.host && forfeitEnd.challenger && forfeitEnd.winnerId) {
+            if (
+              forfeitEnd.host &&
+              forfeitEnd.challenger &&
+              forfeitEnd.winnerId
+            ) {
               await persistMatchEnd({
                 roomCode: code,
                 hostId: forfeitEnd.host.id,
@@ -488,9 +676,15 @@ export function createGameServer(options: GameServerOptions = {}) {
     socket.on("disconnect", (reason) => {
       if (socket.data.roomCode) {
         const code = socket.data.roomCode;
-        const disconnectResult = roomManager.handlePlayerDisconnect(code, user.id);
+        const disconnectResult = roomManager.handlePlayerDisconnect(
+          code,
+          user.id,
+        );
 
         if (disconnectResult?.isMatchActive) {
+          if (disconnectResult.match?.status === "ban_phase") {
+            clearRoomTimers(code);
+          }
           const countdownSeconds = Math.ceil(disconnectGracePeriodMs / 1000);
           const disconnectTimestamp = Date.now();
 
@@ -512,7 +706,11 @@ export function createGameServer(options: GameServerOptions = {}) {
               clearRoomTimers(code);
               io.to(`room:${code}`).emit("match:end", forfeitEnd);
 
-              if (forfeitEnd.host && forfeitEnd.challenger && forfeitEnd.winnerId) {
+              if (
+                forfeitEnd.host &&
+                forfeitEnd.challenger &&
+                forfeitEnd.winnerId
+              ) {
                 await persistMatchEnd({
                   roomCode: code,
                   hostId: forfeitEnd.host.id,
@@ -546,7 +744,7 @@ export function createGameServer(options: GameServerOptions = {}) {
 
       if (process.env.NODE_ENV !== "test") {
         console.log(
-          `[GameServer] Player disconnected: ${user.name} (${user.id}), reason: ${reason}`
+          `[GameServer] Player disconnected: ${user.name} (${user.id}), reason: ${reason}`,
         );
       }
     });

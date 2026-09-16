@@ -13,8 +13,11 @@ import type {
   ClientQuestion,
   RoundResultPayload,
   MatchEndPayload,
+  CategoryBanState,
+  CategoryItem,
 } from "@/server/types";
 import { BattleArena } from "./battle-arena";
+import { CategoryBanArena } from "./category-ban-arena";
 import { MatchResultModal } from "./match-result-modal";
 
 export function BattleRoom({
@@ -29,6 +32,8 @@ export function BattleRoom({
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [isConnecting, setIsConnecting] = useState(true);
+  const [banState, setBanState] = useState<CategoryBanState | null>(null);
+  const [selectedCategory, setSelectedCategory] = useState<CategoryItem | null>(null);
   const [countdown, setCountdown] = useState<{ count: number; text: string } | null>(null);
   const [activeQuestion, setActiveQuestion] = useState<ClientQuestion | null>(null);
   const [roundNumber, setRoundNumber] = useState(1);
@@ -82,6 +87,8 @@ export function BattleRoom({
 
     socket.on("room:player_left", (data) => {
       setRoom(data.room);
+      setBanState(null);
+      setSelectedCategory(null);
       setCountdown(null);
       setOpponentLockedIn(false);
       setRematchRequestedBy([]);
@@ -92,8 +99,27 @@ export function BattleRoom({
       setError(data.message);
     });
 
+    socket.on("match:ban_phase_start", (data) => {
+      setBanState(data);
+      setSelectedCategory(null);
+      setCountdown(null);
+      setActiveQuestion(null);
+      setMatchEnd(null);
+      setRematchRequestedBy([]);
+      setOpponentDisconnected(false);
+    });
+
+    socket.on("match:category_banned", (data) => {
+      setBanState(data);
+    });
+
+    socket.on("match:category_decided", (data) => {
+      setSelectedCategory(data.category);
+    });
+
     socket.on("match:countdown", (data) => {
       setCountdown(data);
+      setBanState(null);
       setMatchEnd(null);
       setRematchRequestedBy([]);
       setOpponentDisconnected(false);
@@ -101,6 +127,7 @@ export function BattleRoom({
 
     socket.on("round:start", (data) => {
       setCountdown(null);
+      setBanState(null);
       setActiveQuestion(data.question);
       setRoundNumber(data.roundNumber);
       setRoundStartTime(data.startTime);
@@ -110,6 +137,7 @@ export function BattleRoom({
       setIsSuddenDeath(Boolean(data.isSuddenDeath));
       setMatchEnd(null);
       setOpponentDisconnected(false);
+      if (data.selectedCategory) setSelectedCategory(data.selectedCategory);
       if (data.hostScore !== undefined) setHostScore(data.hostScore);
       if (data.challengerScore !== undefined) setChallengerScore(data.challengerScore);
     });
@@ -131,6 +159,7 @@ export function BattleRoom({
 
     socket.on("match:end", (data) => {
       setMatchEnd(data);
+      setBanState(null);
       setOpponentDisconnected(false);
     });
 
@@ -152,6 +181,12 @@ export function BattleRoom({
     });
 
     socket.on("match:restore", (data) => {
+      if (data.banState) {
+        setBanState(data.banState);
+      }
+      if (data.selectedCategory) {
+        setSelectedCategory(data.selectedCategory);
+      }
       if (data.question) {
         setActiveQuestion(data.question);
       }
@@ -213,6 +248,20 @@ export function BattleRoom({
           if (!res?.success) {
             setSelectedOption(null);
             if (res?.error) setError(res.error);
+          }
+        }
+      );
+    }
+  };
+
+  const handleBanCategory = (categoryId: number) => {
+    if (socketRef.current) {
+      socketRef.current.emit(
+        "player:ban_category",
+        { roomCode: roomId, categoryId },
+        (res) => {
+          if (!res?.success && res?.error) {
+            setError(res.error);
           }
         }
       );
@@ -301,6 +350,21 @@ export function BattleRoom({
           onLeaveRoom={handleLeave}
         />
       </>
+    );
+  }
+
+  // Active Category Ban / Veto Phase
+  if (banState) {
+    return (
+      <CategoryBanArena
+        room={room}
+        currentUser={currentUser}
+        banState={banState}
+        selectedCategory={selectedCategory}
+        opponentDisconnected={opponentDisconnected}
+        disconnectCountdown={disconnectCountdown}
+        onBanCategory={handleBanCategory}
+      />
     );
   }
 

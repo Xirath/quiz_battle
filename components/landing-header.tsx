@@ -2,7 +2,6 @@ import Image from "next/image";
 import Link from "next/link";
 import { auth } from "@/auth";
 import { SignInButton, SignOutButton } from "@/components/auth-buttons";
-import { ConnectionStatusBadge } from "@/components/connection-status";
 
 export async function LandingHeader() {
   const session = await auth();
@@ -67,27 +66,26 @@ export async function LandingHeader() {
 
         {/* Auth / Profile Area */}
         <div className="flex items-center gap-3">
-          <ConnectionStatusBadge />
           {user ? (
             <div className="flex flex-wrap items-center gap-3 sm:gap-4">
               {/* Stats Counters */}
-              <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/60 px-3 py-1.5 text-xs font-medium">
+              <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/60 px-3 py-1.5 text-xs font-medium lg:text-lg">
                 <span className="text-muted-foreground">
                   Matches:{" "}
-                  <strong className="text-foreground">
+                  <strong className="text-foreground lg:text-lg">
                     {stats?.totalMatches ?? 0}
                   </strong>
                 </span>
                 <span className="text-border">|</span>
-                <span className="text-success font-semibold">
+                <span className="text-success font-semibold lg:text-lg">
                   W: {stats?.wins ?? 0}
                 </span>
                 <span className="text-border">|</span>
-                <span className="text-destructive font-semibold">
+                <span className="text-destructive font-semibold lg:text-lg">
                   L: {stats?.losses ?? 0}
                 </span>
                 <span className="text-border">|</span>
-                <span className="text-accent font-bold">
+                <span className="text-accent font-bold lg:text-lg">
                   {stats?.winRate ?? 0}% Win Rate
                 </span>
               </div>
@@ -104,11 +102,11 @@ export async function LandingHeader() {
                     unoptimized
                   />
                 ) : (
-                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-accent text-accent-foreground font-bold text-xs">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-accent text-accent-foreground font-bold text-xs lg:text-xl">
                     {(user.name ?? "P").charAt(0).toUpperCase()}
                   </div>
                 )}
-                <span className="hidden text-sm font-semibold text-foreground md:inline-block max-w-[120px] truncate">
+                <span className="hidden text-sm font-semibold text-foreground md:inline-block max-w-[120px] truncate lg:text-2xl">
                   {user.name ?? "Player"}
                 </span>
               </div>

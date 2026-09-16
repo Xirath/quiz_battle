@@ -185,10 +185,12 @@ export function BattleArena({
 
   // Live disconnection grace period countdown (30s -> 0s)
   const [dcSeconds, setDcSeconds] = useState(disconnectCountdown);
+  const [prevDcProp, setPrevDcProp] = useState(disconnectCountdown);
 
-  useEffect(() => {
+  if (disconnectCountdown !== prevDcProp) {
+    setPrevDcProp(disconnectCountdown);
     setDcSeconds(disconnectCountdown);
-  }, [disconnectCountdown]);
+  }
 
   useEffect(() => {
     if (!opponentDisconnected) return;

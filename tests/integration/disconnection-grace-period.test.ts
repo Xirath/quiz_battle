@@ -29,6 +29,8 @@ describe("Disconnection Grace Period & Forfeit Handling Integration", () => {
       earlyRevealDebounceMs: 30,
       roundRevealDurationMs: 50,
       disconnectGracePeriodMs: 150, // 150ms grace period for fast testing
+      banTurnDurationMs: 20,
+      categoryRevealDurationMs: 20,
     });
 
     const address = await serverInstance.listen();
@@ -56,6 +58,8 @@ describe("Disconnection Grace Period & Forfeit Handling Integration", () => {
     "player-challenger-leave-forfeit-2",
     "player-host-dc-pause-1",
     "player-challenger-dc-pause-2",
+    "player-host-ban-dc-1",
+    "player-challenger-ban-dc-2",
   ];
 
   beforeEach(async () => {
@@ -426,6 +430,8 @@ describe("Disconnection Grace Period & Forfeit Handling Integration", () => {
       earlyRevealDebounceMs: 20,
       roundRevealDurationMs: 40,
       disconnectGracePeriodMs: 2000,
+      banTurnDurationMs: 20,
+      categoryRevealDurationMs: 20,
     });
     const addr = await pauseServer.listen();
     const testPort = addr.port;
@@ -534,6 +540,86 @@ describe("Disconnection Grace Period & Forfeit Handling Integration", () => {
       hostSocket.disconnect();
       challengerSocket.disconnect();
       await pauseServer.close();
+    }
+  });
+
+  it("awards victory by forfeit to remaining player when disconnect occurs during category ban phase and grace period expires", async () => {
+    const hostId = "player-host-ban-dc-1";
+    const challengerId = "player-challenger-ban-dc-2";
+
+    await prisma.user.createMany({
+      data: [
+        { id: hostId, name: "Host BanDC", email: "hostbandc@quizbattle.local" },
+        { id: challengerId, name: "Challenger BanDC", email: "challengerbandc@quizbattle.local" },
+      ],
+    });
+
+    const hostToken = await createAuthToken(hostId, "Host BanDC", "hostbandc@quizbattle.local");
+    const challengerToken = await createAuthToken(challengerId, "Challenger BanDC", "challengerbandc@quizbattle.local");
+
+    const hostSocket = createSocket(hostToken);
+    const challengerSocket = createSocket(challengerToken);
+
+    try {
+      await Promise.all([waitForConnect(hostSocket), waitForConnect(challengerSocket)]);
+
+      let roomCode = "";
+      await new Promise<void>((resolve, reject) => {
+        hostSocket.emit("room:create", (res) => {
+          if (res.success && res.code) {
+            roomCode = res.code;
+            resolve();
+          } else reject(new Error(res.error));
+        });
+      });
+
+      await new Promise<void>((resolve, reject) => {
+        hostSocket.emit("room:join", { code: roomCode }, (res) => {
+          if (res.success) resolve();
+          else reject(new Error(res.error));
+        });
+      });
+
+      const hostBanStartPromise = new Promise<{ currentBanningPlayerId: string }>((resolve) => {
+        hostSocket.once("match:ban_phase_start", resolve);
+      });
+
+      await new Promise<void>((resolve, reject) => {
+        challengerSocket.emit("room:join", { code: roomCode }, (res) => {
+          if (res.success) resolve();
+          else reject(new Error(res.error));
+        });
+      });
+
+      // Wait for ban phase to start
+      await hostBanStartPromise;
+
+      // Track match:end on host
+      const hostMatchEndPromise = new Promise<MatchEndPayload>((resolve) => {
+        hostSocket.once("match:end", resolve);
+      });
+
+      // Challenger drops connection while ban phase is active
+      challengerSocket.disconnect();
+
+      // Host should receive match:end forfeit payload once disconnect grace period (150ms) expires
+      const endPayload = await hostMatchEndPromise;
+
+      expect(endPayload.isForfeit).toBe(true);
+      expect(endPayload.winnerId).toBe(hostId);
+      expect(endPayload.winnerName).toBe("Host BanDC");
+
+      // Verify DB persistence
+      await new Promise((r) => setTimeout(r, 60));
+      const persistedMatch = await prisma.match.findFirst({
+        where: { roomCode },
+      });
+      expect(persistedMatch).not.toBeNull();
+      expect(persistedMatch?.isForfeit).toBe(true);
+      expect(persistedMatch?.winnerId).toBe(hostId);
+    } finally {
+      hostSocket.disconnect();
+      challengerSocket.disconnect();
     }
   });
 });

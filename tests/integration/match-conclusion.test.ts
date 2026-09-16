@@ -51,6 +51,8 @@ describe("Match Conclusion, Sudden Death & Rematch Integration", () => {
       roundDurationMs: 200,   // Fast round timer
       earlyRevealDebounceMs: 30, // 30ms early reveal debounce
       roundRevealDurationMs: 50, // 50ms reveal intermission
+      banTurnDurationMs: 20,
+      categoryRevealDurationMs: 20,
     });
 
     const address = await serverInstance.listen();
