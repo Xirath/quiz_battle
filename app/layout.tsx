@@ -16,6 +16,14 @@ export const metadata: Metadata = {
   title: "Quiz Battle",
   description:
     "Race to 6 correct answers in live 1v1 real-time multiplayer trivia matches.",
+  icons: {
+    icon: [
+      {
+        url: "/icon.svg",
+        type: "image/svg+xml",
+      },
+    ],
+  },
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

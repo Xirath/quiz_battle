@@ -1,49 +1,39 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
   <style>
-    :root { color: #000000; }
+    :root { color-scheme: light dark; }
+    .icon-fill { fill: #000000; }
+    .icon-stroke { stroke: #000000; fill: none; }
     @media (prefers-color-scheme: dark) {
-      :root { color: #ffffff; }
+      .icon-fill { fill: #ffffff; }
+      .icon-stroke { stroke: #ffffff; fill: none; }
     }
   </style>
-  <defs>
-    <!-- Single sword pointing UP along vertical axis, centered at (256, 256) -->
-    <g id="sword">
-      <!-- Blade: straight double-edged blade with triangular tip extending over circle -->
-      <path d="M 256 16
-               L 288 52
-               L 288 388
-               L 224 388
-               L 224 52
-               Z" fill="currentColor" />
-
-      <!-- Crossguard with swept quillon tips pointing toward the blade -->
-      <path d="M 224 388
-               L 165 348
-               L 182 414
-               L 242 414
-               L 242 422
-               L 270 422
-               L 270 414
-               L 330 414
-               L 347 348
-               L 288 388
-               Z" fill="currentColor" />
-
-      <!-- Grip / Handle -->
-      <rect x="244" y="422" width="24" height="68" rx="3" fill="currentColor" />
-
-      <!-- Pommel extending over circle at bottom -->
-      <circle cx="256" cy="496" r="22" fill="currentColor" />
-    </g>
-  </defs>
 
   <!-- Circle / Ring (in background) -->
-  <circle cx="256" cy="256" r="236" fill="none" stroke="currentColor" stroke-width="13" />
+  <circle class="icon-stroke" cx="256" cy="256" r="236" fill="none" stroke="#000000" stroke-width="13" />
 
   <!-- Swords (drawn OVER the circle) -->
   <!-- Sword 1: pointing to top-left / bottom-right (-45 deg) -->
-  <use href="#sword" transform="rotate(-45 256 256)" />
+  <g transform="rotate(-45 256 256)">
+    <!-- Blade -->
+    <path class="icon-fill" fill="#000000" d="M 256 16 L 288 52 L 288 388 L 224 388 L 224 52 Z" />
+    <!-- Crossguard -->
+    <path class="icon-fill" fill="#000000" d="M 224 388 L 165 348 L 182 414 L 242 414 L 242 422 L 270 422 L 270 414 L 330 414 L 347 348 L 288 388 Z" />
+    <!-- Grip / Handle -->
+    <rect class="icon-fill" fill="#000000" x="244" y="422" width="24" height="68" rx="3" />
+    <!-- Pommel -->
+    <circle class="icon-fill" fill="#000000" cx="256" cy="496" r="22" />
+  </g>
 
   <!-- Sword 2: pointing to top-right / bottom-left (45 deg) -->
-  <use href="#sword" transform="rotate(45 256 256)" />
+  <g transform="rotate(45 256 256)">
+    <!-- Blade -->
+    <path class="icon-fill" fill="#000000" d="M 256 16 L 288 52 L 288 388 L 224 388 L 224 52 Z" />
+    <!-- Crossguard -->
+    <path class="icon-fill" fill="#000000" d="M 224 388 L 165 348 L 182 414 L 242 414 L 242 422 L 270 422 L 270 414 L 330 414 L 347 348 L 288 388 Z" />
+    <!-- Grip / Handle -->
+    <rect class="icon-fill" fill="#000000" x="244" y="422" width="24" height="68" rx="3" />
+    <!-- Pommel -->
+    <circle class="icon-fill" fill="#000000" cx="256" cy="496" r="22" />
+  </g>
 </svg>
