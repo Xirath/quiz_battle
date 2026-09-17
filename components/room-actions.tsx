@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { io, type Socket } from "socket.io-client";
+import { fetchSocketToken } from "@/lib/socket-client";
 import type {
   ClientToServerEvents,
   ServerToClientEvents,
@@ -14,17 +15,21 @@ export function RoomActions() {
   const [isCreating, setIsCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const handleCreateRoom = () => {
+  const handleCreateRoom = async () => {
     setIsCreating(true);
     setError(null);
 
     const serverUrl =
       process.env.NEXT_PUBLIC_GAME_SERVER_URL || "http://localhost:3001";
 
+    const token = await fetchSocketToken();
+
     const socket: Socket<ServerToClientEvents, ClientToServerEvents> = io(
       serverUrl,
       {
         withCredentials: true,
+        auth: token ? { token } : undefined,
+        query: token ? { token } : undefined,
         transports: ["websocket", "polling"],
         reconnection: false,
       }

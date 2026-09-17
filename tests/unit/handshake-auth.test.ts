@@ -149,4 +149,41 @@ describe("createAuthMiddleware", () => {
       image: "https://example.com/pic.png",
     });
   });
+
+  it("authenticates socket when token is passed explicitly via handshake.auth.token", async () => {
+    const token = await encode({
+      token: {
+        id: "player-cross-domain",
+        name: "Remote Player",
+        email: "remote@quizbattle.local",
+        picture: "https://example.com/remote.png",
+      },
+      secret: TEST_SECRET,
+      salt: "authjs.session-token",
+    });
+
+    const mockSocket = {
+      handshake: {
+        headers: {},
+        auth: { token },
+      },
+      data: {},
+    };
+
+    let errorPassed: Error | undefined;
+    await authMiddleware(
+      mockSocket as unknown as Parameters<typeof authMiddleware>[0],
+      (err) => {
+        errorPassed = err;
+      }
+    );
+
+    expect(errorPassed).toBeUndefined();
+    expect((mockSocket.data as Partial<SocketData>).user).toEqual({
+      id: "player-cross-domain",
+      name: "Remote Player",
+      email: "remote@quizbattle.local",
+      image: "https://example.com/remote.png",
+    });
+  });
 });

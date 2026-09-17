@@ -56,7 +56,8 @@ export function extractSessionToken(
 
 export async function authenticateHandshake(
   cookieHeader?: string,
-  secret?: string
+  secret?: string,
+  explicitToken?: string
 ): Promise<AuthenticatedUser> {
   const resolvedSecret =
     secret || process.env.AUTH_SECRET || process.env.NEXTAUTH_SECRET;
@@ -67,17 +68,47 @@ export async function authenticateHandshake(
     );
   }
 
-  const extracted = extractSessionToken(cookieHeader);
-  if (!extracted) {
+  let tokenToDecode: string | null = null;
+  let primarySalt: string = "authjs.session-token";
+
+  if (explicitToken && typeof explicitToken === "string" && explicitToken.trim()) {
+    tokenToDecode = explicitToken.trim();
+  } else if (cookieHeader) {
+    const extracted = extractSessionToken(cookieHeader);
+    if (extracted) {
+      tokenToDecode = extracted.token;
+      primarySalt = extracted.salt;
+    }
+  }
+
+  if (!tokenToDecode) {
     throw new Error("Authentication error: Unauthorized");
   }
 
   try {
-    const decoded = await decode({
-      token: extracted.token,
-      secret: resolvedSecret,
-      salt: extracted.salt,
-    });
+    let decoded = null;
+    try {
+      decoded = await decode({
+        token: tokenToDecode,
+        secret: resolvedSecret,
+        salt: primarySalt,
+      });
+    } catch {
+      // Fallback: try other salts if primary salt fails
+      for (const altSalt of SESSION_COOKIE_NAMES) {
+        if (altSalt === primarySalt) continue;
+        try {
+          decoded = await decode({
+            token: tokenToDecode,
+            secret: resolvedSecret,
+            salt: altSalt,
+          });
+          if (decoded) break;
+        } catch {
+          // ignore and try next salt
+        }
+      }
+    }
 
     if (!decoded) {
       throw new Error("Authentication error: Unauthorized");
@@ -120,7 +151,11 @@ export function createAuthMiddleware(secret?: string) {
   return async (socket: Socket, next: (err?: Error) => void) => {
     try {
       const cookieHeader = socket.handshake.headers.cookie;
-      const user = await authenticateHandshake(cookieHeader, secret);
+      const explicitToken =
+        (socket.handshake.auth?.token as string | undefined) ||
+        (socket.handshake.query?.token as string | undefined);
+
+      const user = await authenticateHandshake(cookieHeader, secret, explicitToken);
       socket.data.user = user;
       next();
     } catch (error) {

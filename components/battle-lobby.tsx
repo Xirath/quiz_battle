@@ -5,6 +5,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { io, type Socket } from "socket.io-client";
+import { fetchSocketToken } from "@/lib/socket-client";
 import type {
   ClientToServerEvents,
   ServerToClientEvents,
@@ -51,173 +52,185 @@ export function BattleRoom({
   const socketRef = useRef<Socket<ServerToClientEvents, ClientToServerEvents> | null>(null);
 
   useEffect(() => {
-    const serverUrl =
-      process.env.NEXT_PUBLIC_GAME_SERVER_URL || "http://localhost:3001";
+    let socket: Socket<ServerToClientEvents, ClientToServerEvents> | null = null;
+    let isCancelled = false;
 
-    const socket: Socket<ServerToClientEvents, ClientToServerEvents> = io(
-      serverUrl,
-      {
+    async function initBattleSocket() {
+      const serverUrl =
+        process.env.NEXT_PUBLIC_GAME_SERVER_URL || "http://localhost:3001";
+
+      const token = await fetchSocketToken();
+      if (isCancelled) return;
+
+      socket = io(serverUrl, {
         withCredentials: true,
+        auth: token ? { token } : undefined,
+        query: token ? { token } : undefined,
         transports: ["websocket", "polling"],
         reconnectionAttempts: 5,
-      }
-    );
-    socketRef.current = socket;
+      });
+      socketRef.current = socket;
 
-    socket.on("connect", () => {
-      setIsConnecting(false);
-      socket.emit("room:join", { code: roomId }, (res) => {
-        if (res.success && res.room) {
-          setRoom(res.room);
-          setError(null);
-        } else {
-          setError(res.error || "Failed to join room");
+      socket.on("connect", () => {
+        setIsConnecting(false);
+        socket?.emit("room:join", { code: roomId }, (res) => {
+          if (res.success && res.room) {
+            setRoom(res.room);
+            setError(null);
+          } else {
+            setError(res.error || "Failed to join room");
+          }
+        });
+      });
+
+      socket.on("room:state", (updatedRoom) => {
+        setRoom(updatedRoom);
+        setError(null);
+      });
+
+      socket.on("room:player_joined", (data) => {
+        setRoom(data.room);
+      });
+
+      socket.on("room:player_left", (data) => {
+        setRoom(data.room);
+        setBanState(null);
+        setSelectedCategory(null);
+        setCountdown(null);
+        setOpponentLockedIn(false);
+        setRematchRequestedBy([]);
+        setOpponentDisconnected(false);
+      });
+
+      socket.on("room:error", (data) => {
+        setError(data.message);
+      });
+
+      socket.on("match:ban_phase_start", (data) => {
+        setBanState(data);
+        setSelectedCategory(null);
+        setCountdown(null);
+        setActiveQuestion(null);
+        setMatchEnd(null);
+        setRematchRequestedBy([]);
+        setOpponentDisconnected(false);
+      });
+
+      socket.on("match:category_banned", (data) => {
+        setBanState(data);
+      });
+
+      socket.on("match:category_decided", (data) => {
+        setSelectedCategory(data.category);
+      });
+
+      socket.on("match:countdown", (data) => {
+        setCountdown(data);
+        setBanState(null);
+        setMatchEnd(null);
+        setRematchRequestedBy([]);
+        setOpponentDisconnected(false);
+      });
+
+      socket.on("round:start", (data) => {
+        setCountdown(null);
+        setBanState(null);
+        setActiveQuestion(data.question);
+        setRoundNumber(data.roundNumber);
+        setRoundStartTime(data.startTime);
+        setSelectedOption(null);
+        setOpponentLockedIn(false);
+        setRoundResult(null);
+        setIsSuddenDeath(Boolean(data.isSuddenDeath));
+        setMatchEnd(null);
+        setOpponentDisconnected(false);
+        if (data.selectedCategory) setSelectedCategory(data.selectedCategory);
+        if (data.hostScore !== undefined) setHostScore(data.hostScore);
+        if (data.challengerScore !== undefined) setChallengerScore(data.challengerScore);
+      });
+
+      socket.on("player:answered", (data) => {
+        if (data.playerId !== currentUser.id) {
+          setOpponentLockedIn(true);
         }
       });
-    });
 
-    socket.on("room:state", (updatedRoom) => {
-      setRoom(updatedRoom);
-      setError(null);
-    });
+      socket.on("round:result", (data) => {
+        setRoundResult(data);
+        setHostScore(data.hostScore);
+        setChallengerScore(data.challengerScore);
+        if (data.isSuddenDeath !== undefined) {
+          setIsSuddenDeath(data.isSuddenDeath);
+        }
+      });
 
-    socket.on("room:player_joined", (data) => {
-      setRoom(data.room);
-    });
+      socket.on("match:end", (data) => {
+        setMatchEnd(data);
+        setBanState(null);
+        setOpponentDisconnected(false);
+      });
 
-    socket.on("room:player_left", (data) => {
-      setRoom(data.room);
-      setBanState(null);
-      setSelectedCategory(null);
-      setCountdown(null);
-      setOpponentLockedIn(false);
-      setRematchRequestedBy([]);
-      setOpponentDisconnected(false);
-    });
+      socket.on("match:rematch_status", (data) => {
+        setRematchRequestedBy(data.requestedBy);
+      });
 
-    socket.on("room:error", (data) => {
-      setError(data.message);
-    });
+      socket.on("player:disconnected", (data) => {
+        if (data.playerId !== currentUser.id) {
+          setOpponentDisconnected(true);
+          setDisconnectCountdown(data.countdownSeconds);
+        }
+      });
 
-    socket.on("match:ban_phase_start", (data) => {
-      setBanState(data);
-      setSelectedCategory(null);
-      setCountdown(null);
-      setActiveQuestion(null);
-      setMatchEnd(null);
-      setRematchRequestedBy([]);
-      setOpponentDisconnected(false);
-    });
+      socket.on("player:reconnected", (data) => {
+        if (data.playerId !== currentUser.id) {
+          setOpponentDisconnected(false);
+        }
+      });
 
-    socket.on("match:category_banned", (data) => {
-      setBanState(data);
-    });
-
-    socket.on("match:category_decided", (data) => {
-      setSelectedCategory(data.category);
-    });
-
-    socket.on("match:countdown", (data) => {
-      setCountdown(data);
-      setBanState(null);
-      setMatchEnd(null);
-      setRematchRequestedBy([]);
-      setOpponentDisconnected(false);
-    });
-
-    socket.on("round:start", (data) => {
-      setCountdown(null);
-      setBanState(null);
-      setActiveQuestion(data.question);
-      setRoundNumber(data.roundNumber);
-      setRoundStartTime(data.startTime);
-      setSelectedOption(null);
-      setOpponentLockedIn(false);
-      setRoundResult(null);
-      setIsSuddenDeath(Boolean(data.isSuddenDeath));
-      setMatchEnd(null);
-      setOpponentDisconnected(false);
-      if (data.selectedCategory) setSelectedCategory(data.selectedCategory);
-      if (data.hostScore !== undefined) setHostScore(data.hostScore);
-      if (data.challengerScore !== undefined) setChallengerScore(data.challengerScore);
-    });
-
-    socket.on("player:answered", (data) => {
-      if (data.playerId !== currentUser.id) {
-        setOpponentLockedIn(true);
-      }
-    });
-
-    socket.on("round:result", (data) => {
-      setRoundResult(data);
-      setHostScore(data.hostScore);
-      setChallengerScore(data.challengerScore);
-      if (data.isSuddenDeath !== undefined) {
+      socket.on("match:restore", (data) => {
+        if (data.banState) {
+          setBanState(data.banState);
+        }
+        if (data.selectedCategory) {
+          setSelectedCategory(data.selectedCategory);
+        }
+        if (data.question) {
+          setActiveQuestion(data.question);
+        }
+        setRoundNumber(data.roundNumber);
+        setRoundStartTime(data.startTime);
+        setHostScore(data.hostScore);
+        setChallengerScore(data.challengerScore);
         setIsSuddenDeath(data.isSuddenDeath);
-      }
-    });
+        setSelectedOption(data.selectedOption);
+        setOpponentLockedIn(data.opponentLockedIn);
+        setRoundResult(data.roundResult);
+        if (data.opponentDisconnected) {
+          setOpponentDisconnected(true);
+          setDisconnectCountdown(data.disconnectCountdown ?? 30);
+        } else {
+          setOpponentDisconnected(false);
+        }
+      });
 
-    socket.on("match:end", (data) => {
-      setMatchEnd(data);
-      setBanState(null);
-      setOpponentDisconnected(false);
-    });
+      socket.on("connect_error", (err) => {
+        setIsConnecting(false);
+        if (err.message.includes("Unauthorized")) {
+          setError("Unauthorized: Please sign in to join this battle");
+        } else {
+          setError("Could not connect to game server");
+        }
+      });
+    }
 
-    socket.on("match:rematch_status", (data) => {
-      setRematchRequestedBy(data.requestedBy);
-    });
-
-    socket.on("player:disconnected", (data) => {
-      if (data.playerId !== currentUser.id) {
-        setOpponentDisconnected(true);
-        setDisconnectCountdown(data.countdownSeconds);
-      }
-    });
-
-    socket.on("player:reconnected", (data) => {
-      if (data.playerId !== currentUser.id) {
-        setOpponentDisconnected(false);
-      }
-    });
-
-    socket.on("match:restore", (data) => {
-      if (data.banState) {
-        setBanState(data.banState);
-      }
-      if (data.selectedCategory) {
-        setSelectedCategory(data.selectedCategory);
-      }
-      if (data.question) {
-        setActiveQuestion(data.question);
-      }
-      setRoundNumber(data.roundNumber);
-      setRoundStartTime(data.startTime);
-      setHostScore(data.hostScore);
-      setChallengerScore(data.challengerScore);
-      setIsSuddenDeath(data.isSuddenDeath);
-      setSelectedOption(data.selectedOption);
-      setOpponentLockedIn(data.opponentLockedIn);
-      setRoundResult(data.roundResult);
-      if (data.opponentDisconnected) {
-        setOpponentDisconnected(true);
-        setDisconnectCountdown(data.disconnectCountdown ?? 30);
-      } else {
-        setOpponentDisconnected(false);
-      }
-    });
-
-    socket.on("connect_error", (err) => {
-      setIsConnecting(false);
-      if (err.message.includes("Unauthorized")) {
-        setError("Unauthorized: Please sign in to join this battle");
-      } else {
-        setError("Could not connect to game server");
-      }
-    });
+    initBattleSocket();
 
     return () => {
-      socket.emit("room:leave", { code: roomId });
-      socket.disconnect();
+      isCancelled = true;
+      if (socket) {
+        socket.emit("room:leave", { code: roomId });
+        socket.disconnect();
+      }
       socketRef.current = null;
     };
   }, [roomId, currentUser.id]);
