@@ -35,28 +35,17 @@ Traditional digital trivia games and quiz applications are often asynchronous (t
 
 ## 📸 Screenshots, Demo & Deployment
 
-> **Live Deployment:** [quiz-battle-demo.vercel.app](https://quiz-battle-demo.vercel.app) *(Example placeholder — update with your deployed URL)*
+> 🚀 **Live Demo:** [https://quiz-battle-three.vercel.app/](https://quiz-battle-three.vercel.app/)
 
-### UI Layout Preview
+### Screenshots
 
-```
-+-------------------------------------------------------------+
-|                      ⚔️ QUIZ BATTLE                         |
-|     [ Create New Room ]        [ Join with Code: ABC123 ]   |
-+-------------------------------------------------------------+
-|                    CATEGORY BAN ARENA                       |
-|   Player 1 bans: "Film" -> Remaining: "Science & Nature"    |
-+-------------------------------------------------------------+
-|                       ACTIVE MATCH                          |
-|    Player 1  ⭐⭐⭐⭐☆☆ (4/6)   VS   Player 2  ⭐⭐⭐☆☆☆ (3/6)  |
-|                                                             |
-|   Question 5/10: "Which planet is closest to the Sun?"      |
-|   [ 00:07 ]                                                 |
-|   [ A: Venus ]   [ B: Mercury ]  [ C: Mars ]  [ D: Jupiter ]|
-+-------------------------------------------------------------+
-```
+| Lobby & Room Creation | Category Ban Phase |
+| :---: | :---: |
+| ![Lobby & Room Creation](public/screenshots/lobby.png) | ![Category Ban Phase](public/screenshots/category-ban.png) |
 
-*(Add application screenshots into `/public/screenshots/` and reference them here for presentations).*
+| Active Battle Match | Match Results & Rematch |
+| :---: | :---: |
+| ![Active Battle Match](public/screenshots/battle.png) | ![Match Results](public/screenshots/match-results.png) |
 
 ---
 
