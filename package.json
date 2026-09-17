@@ -7,7 +7,7 @@
     "dev:server": "tsx watch server/index.ts",
     "dev": "concurrently -n next,game -c blue,magenta \"npm run dev:next\" \"npm run dev:server\"",
     "server": "tsx server/index.ts",
-    "build": "next build",
+    "build": "prisma generate && next build",
     "start": "next start",
     "lint": "eslint",
     "test": "vitest run",

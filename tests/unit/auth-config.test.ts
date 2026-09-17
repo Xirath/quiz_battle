@@ -31,10 +31,10 @@ describe("isDevMockAuthEnabled", () => {
 
   it("defaults to true in development and false in production", () => {
     delete process.env.ENABLE_DEV_MOCK_AUTH;
-    process.env.NODE_ENV = "development";
+    (process.env as Record<string, string | undefined>).NODE_ENV = "development";
     expect(isDevMockAuthEnabled()).toBe(true);
 
-    process.env.NODE_ENV = "production";
+    (process.env as Record<string, string | undefined>).NODE_ENV = "production";
     expect(isDevMockAuthEnabled()).toBe(false);
   });
 });
