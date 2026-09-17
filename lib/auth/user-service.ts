@@ -20,16 +20,30 @@ export async function getOrCreateUser(params: {
   });
 
   if (existing) {
+    const hasNameChange = Boolean(params.name && params.name !== existing.name);
+    const hasImageChange = Boolean(params.image && params.image !== existing.image);
+
+    let userRecord = existing;
+    if (hasNameChange || hasImageChange) {
+      userRecord = await prisma.user.update({
+        where: { id: existing.id },
+        data: {
+          ...(params.name ? { name: params.name } : {}),
+          ...(params.image ? { image: params.image } : {}),
+        },
+      });
+    }
+
     return {
-      id: existing.id,
-      name: existing.name,
-      email: existing.email,
-      image: existing.image,
+      id: userRecord.id,
+      name: userRecord.name,
+      email: userRecord.email,
+      image: userRecord.image,
       stats: calculatePlayerStats({
-        wins: existing.wins,
-        losses: existing.losses,
-        totalMatches: existing.totalMatches,
-        totalCorrectAnswers: existing.totalCorrectAnswers,
+        wins: userRecord.wins,
+        losses: userRecord.losses,
+        totalMatches: userRecord.totalMatches,
+        totalCorrectAnswers: userRecord.totalCorrectAnswers,
       }),
     };
   }

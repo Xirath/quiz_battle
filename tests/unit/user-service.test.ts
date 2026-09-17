@@ -57,4 +57,29 @@ describe("user-service persistence and stats integration", () => {
       winRate: 80, // 4 / 5 = 80%
     });
   });
+
+  it("updates existing user name and image when changed in subsequent logins", async () => {
+    const created = await getOrCreateUser({
+      email: testEmail,
+      name: "Old Name",
+      image: "https://example.com/old.png",
+    });
+
+    expect(created.name).toBe("Old Name");
+    expect(created.image).toBe("https://example.com/old.png");
+
+    const updated = await getOrCreateUser({
+      email: testEmail,
+      name: "New Name",
+      image: "https://example.com/new.png",
+    });
+
+    expect(updated.id).toBe(created.id);
+    expect(updated.name).toBe("New Name");
+    expect(updated.image).toBe("https://example.com/new.png");
+
+    const dbUser = await prisma.user.findUnique({ where: { id: created.id } });
+    expect(dbUser?.name).toBe("New Name");
+    expect(dbUser?.image).toBe("https://example.com/new.png");
+  });
 });
