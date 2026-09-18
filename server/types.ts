@@ -140,6 +140,7 @@ export interface ServerToClientEvents {
     startTime?: number;
     isSuddenDeath?: boolean;
     selectedCategory?: CategoryItem | null;
+    roundDurationMs?: number;
   }) => void;
   "player:answered": (data: { playerId: string }) => void;
   "round:result": (data: RoundResultPayload) => void;

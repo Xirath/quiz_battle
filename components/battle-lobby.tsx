@@ -39,6 +39,7 @@ export function BattleRoom({
   const [activeQuestion, setActiveQuestion] = useState<ClientQuestion | null>(null);
   const [roundNumber, setRoundNumber] = useState(1);
   const [roundStartTime, setRoundStartTime] = useState<number | undefined>(undefined);
+  const [roundDurationMs, setRoundDurationMs] = useState<number | undefined>(undefined);
   const [hostScore, setHostScore] = useState(0);
   const [challengerScore, setChallengerScore] = useState(0);
   const [selectedOption, setSelectedOption] = useState<string | null>(null);
@@ -144,6 +145,7 @@ export function BattleRoom({
         setIsSuddenDeath(Boolean(data.isSuddenDeath));
         setMatchEnd(null);
         setOpponentDisconnected(false);
+        if (data.roundDurationMs !== undefined) setRoundDurationMs(data.roundDurationMs);
         if (data.selectedCategory) setSelectedCategory(data.selectedCategory);
         if (data.hostScore !== undefined) setHostScore(data.hostScore);
         if (data.challengerScore !== undefined) setChallengerScore(data.challengerScore);
@@ -350,6 +352,7 @@ export function BattleRoom({
             isSuddenDeath={isSuddenDeath}
             opponentDisconnected={opponentDisconnected}
             disconnectCountdown={disconnectCountdown}
+            roundDurationMs={roundDurationMs}
             onSelectOption={handleSelectOption}
             onLeaveRoom={handleLeave}
           />
@@ -399,6 +402,7 @@ export function BattleRoom({
         isSuddenDeath={isSuddenDeath}
         opponentDisconnected={opponentDisconnected}
         disconnectCountdown={disconnectCountdown}
+        roundDurationMs={roundDurationMs}
         onSelectOption={handleSelectOption}
         onLeaveRoom={handleLeave}
       />

@@ -25,13 +25,14 @@ export interface BattleArenaProps {
   isSuddenDeath?: boolean;
   opponentDisconnected?: boolean;
   disconnectCountdown?: number;
+  roundDurationMs?: number;
   onSelectOption?: (option: string) => void;
   onLeaveRoom?: () => void;
 }
 
 const OPTION_LABELS = ["A", "B", "C", "D"];
 const SHORTCUT_KEYS = ["1", "2", "3", "4"];
-const TOTAL_ROUND_SECONDS = 15;
+const DEFAULT_ROUND_SECONDS = 15;
 
 function PlayerScoreCard({
   player,
@@ -53,7 +54,9 @@ function PlayerScoreCard({
   const isRight = align === "right";
 
   return (
-    <div className={`flex items-center gap-3 ${isRight ? "justify-end text-right" : "text-left"}`}>
+    <div
+      className={`flex items-center gap-3 ${isRight ? "justify-end text-right" : "text-left"}`}
+    >
       {!isRight && (
         <div
           className={`relative flex h-12 w-12 shrink-0 items-center justify-center rounded-full border-2 ${
@@ -78,14 +81,18 @@ function PlayerScoreCard({
       )}
 
       <div className="min-w-0">
-        <div className={`flex items-center gap-1.5 ${isRight ? "justify-end" : ""}`}>
+        <div
+          className={`flex items-center gap-1.5 ${isRight ? "justify-end" : ""}`}
+        >
           <p className="truncate text-sm font-bold text-foreground">
             {player?.name ?? role}
           </p>
           {isCurrentUser && (
             <span
               className={`rounded ${
-                role === "Host" ? "bg-primary/15 text-primary" : "bg-accent/20 text-accent-foreground"
+                role === "Host"
+                  ? "bg-primary/15 text-primary"
+                  : "bg-accent/20 text-accent-foreground"
               } px-1.5 py-0.5 text-[10px] font-semibold`}
             >
               You
@@ -95,7 +102,9 @@ function PlayerScoreCard({
 
         {/* Locked-in status badge */}
         {isLockedIn && !isDisconnected && (
-          <div className={`flex items-center gap-1 pt-0.5 ${isRight ? "justify-end" : ""}`}>
+          <div
+            className={`flex items-center gap-1 pt-0.5 ${isRight ? "justify-end" : ""}`}
+          >
             <span className="inline-flex items-center gap-1 rounded bg-accent/15 px-1.5 py-0.5 text-[10px] font-extrabold text-accent animate-pulse">
               ⚡ Locked in
             </span>
@@ -104,7 +113,9 @@ function PlayerScoreCard({
 
         {/* Disconnected status badge */}
         {isDisconnected && (
-          <div className={`flex items-center gap-1 pt-0.5 ${isRight ? "justify-end" : ""}`}>
+          <div
+            className={`flex items-center gap-1 pt-0.5 ${isRight ? "justify-end" : ""}`}
+          >
             <span className="inline-flex items-center gap-1 rounded bg-warning/15 px-1.5 py-0.5 text-[10px] font-black text-warning animate-pulse">
               ⚠️ Disconnected
             </span>
@@ -112,7 +123,9 @@ function PlayerScoreCard({
         )}
 
         {/* Score indicator glowing neon stars (Race to 6) */}
-        <div className={`flex items-center gap-1 pt-1 ${isRight ? "justify-end" : ""}`}>
+        <div
+          className={`flex items-center gap-1 pt-1 ${isRight ? "justify-end" : ""}`}
+        >
           {isRight && (
             <span className="mr-1 text-xs font-black text-accent">
               {score}/6
@@ -126,7 +139,9 @@ function PlayerScoreCard({
             />
           ))}
           {score > 6 && (
-            <span className={`text-[11px] font-black ${role === "Host" ? "text-primary" : "text-accent"}`}>
+            <span
+              className={`text-[11px] font-black ${role === "Host" ? "text-primary" : "text-accent"}`}
+            >
               +{score - 6}
             </span>
           )}
@@ -174,14 +189,20 @@ export function BattleArena({
   isSuddenDeath = false,
   opponentDisconnected = false,
   disconnectCountdown = 30,
+  roundDurationMs,
   onSelectOption,
   onLeaveRoom,
 }: BattleArenaProps) {
   const isHost = room.host.id === currentUser.id;
   const isChallenger = room.challenger?.id === currentUser.id;
 
-  // Active synchronized 15-second round countdown timer
-  const [timeLeft, setTimeLeft] = useState(TOTAL_ROUND_SECONDS);
+  const totalRoundSeconds =
+    roundDurationMs !== undefined
+      ? Math.max(1, Math.round(roundDurationMs / 1000))
+      : DEFAULT_ROUND_SECONDS;
+
+  // Active synchronized round countdown timer
+  const [timeLeft, setTimeLeft] = useState(totalRoundSeconds);
 
   // Live disconnection grace period countdown (30s -> 0s)
   const [dcSeconds, setDcSeconds] = useState(disconnectCountdown);
@@ -206,7 +227,7 @@ export function BattleArena({
     const roundStart = startTime ?? Date.now();
     const interval = setInterval(() => {
       const elapsedSeconds = (Date.now() - roundStart) / 1000;
-      const remaining = Math.max(0, TOTAL_ROUND_SECONDS - elapsedSeconds);
+      const remaining = Math.max(0, totalRoundSeconds - elapsedSeconds);
       setTimeLeft(remaining);
 
       if (remaining <= 0) {
@@ -215,7 +236,7 @@ export function BattleArena({
     }, 100);
 
     return () => clearInterval(interval);
-  }, [question, roundNumber, roundResult, startTime]);
+  }, [question, roundNumber, roundResult, startTime, totalRoundSeconds]);
 
   // Keyboard shortcut listener: '1'-'4' and 'A'-'D'
   useEffect(() => {
@@ -254,23 +275,38 @@ export function BattleArena({
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [question.options, selectedOption, roundResult, onSelectOption]);
 
-  // Timer Bar Color Logic: Info / Cyan (15s-7.5s) -> Amber (7.5s-3.75s) -> Red (<3.75s)
-  const timerPercentage = Math.min(100, Math.max(0, (timeLeft / TOTAL_ROUND_SECONDS) * 100));
+  // Timer Bar Color Logic: Info / Cyan (100%-50%) -> Amber (50%-25%) -> Red (<25%)
+  const timerPercentage = Math.min(
+    100,
+    Math.max(0, (timeLeft / totalRoundSeconds) * 100),
+  );
   let timerBarColor = "bg-info shadow-xs";
   let timerTextColor = "text-info";
 
-  if (timeLeft <= 3.75) {
+  if (timeLeft <= totalRoundSeconds * 0.25) {
     timerBarColor = "bg-destructive shadow-xs animate-pulse";
     timerTextColor = "text-destructive font-black animate-pulse";
-  } else if (timeLeft <= 7.5) {
+  } else if (timeLeft <= totalRoundSeconds * 0.5) {
     timerBarColor = "bg-accent shadow-xs";
     timerTextColor = "text-accent";
   }
 
   // Round Result Evaluation Info
-  const myAnswer = roundResult ? (isHost ? roundResult.hostAnswer : roundResult.challengerAnswer) : null;
-  const myCorrect = roundResult ? (isHost ? roundResult.hostCorrect : roundResult.challengerCorrect) : null;
-  const opponentCorrect = roundResult ? (isHost ? roundResult.challengerCorrect : roundResult.hostCorrect) : null;
+  const myAnswer = roundResult
+    ? isHost
+      ? roundResult.hostAnswer
+      : roundResult.challengerAnswer
+    : null;
+  const myCorrect = roundResult
+    ? isHost
+      ? roundResult.hostCorrect
+      : roundResult.challengerCorrect
+    : null;
+  const opponentCorrect = roundResult
+    ? isHost
+      ? roundResult.challengerCorrect
+      : roundResult.hostCorrect
+    : null;
 
   return (
     <div className="mx-auto max-w-4xl space-y-6 px-4 py-6">
@@ -317,7 +353,9 @@ export function BattleArena({
                 : "bg-primary/10 text-primary"
             }`}
           >
-            {isSuddenDeath ? `Sudden Death R${roundNumber}` : `Round ${roundNumber}`}
+            {isSuddenDeath
+              ? `Sudden Death R${roundNumber}`
+              : `Round ${roundNumber}`}
           </span>
           <p className="pt-1 text-[11px] font-semibold text-muted-foreground uppercase tracking-widest">
             {isSuddenDeath ? "Tiebreaker Round" : "Race to 6 Correct"}
@@ -351,23 +389,28 @@ export function BattleArena({
             myCorrect
               ? "border-success/50 bg-success/15 text-success"
               : myAnswer
-              ? "border-destructive/50 bg-destructive/15 text-destructive"
-              : "border-accent/50 bg-accent/15 text-accent"
+                ? "border-destructive/50 bg-destructive/15 text-destructive"
+                : "border-accent/50 bg-accent/15 text-accent"
           }`}
         >
           <div className="flex items-center gap-2 text-lg font-black">
             <span>{myCorrect ? "🎉" : myAnswer ? "❌" : "⏰"}</span>
             <span>
               {myCorrect
-                ? "Correct Answer! (+1 Score)"
+                ? "Correct Answer!"
                 : myAnswer
-                ? "Incorrect Answer!"
-                : "Time Expired! (No Answer Submitted)"}
+                  ? "Incorrect Answer!"
+                  : "Time Expired! (No Answer Submitted)"}
             </span>
           </div>
           <p className="text-xs font-semibold opacity-90">
-            {opponentCorrect ? "Opponent answered correctly" : "Opponent answered incorrectly"} •{" "}
-            {opponentDisconnected ? "Waiting for opponent to reconnect..." : "Next round starting shortly..."}
+            {opponentCorrect
+              ? "Opponent answered correctly"
+              : "Opponent answered incorrectly"}{" "}
+            •{" "}
+            {opponentDisconnected
+              ? "Waiting for opponent to reconnect..."
+              : "Next round starting shortly..."}
           </p>
         </div>
       )}
@@ -414,8 +457,10 @@ export function BattleArena({
           const isSelected = selectedOption === option;
 
           // Reveal Intermission Color States
-          let buttonStyle = "border-border bg-card hover:border-primary/50 hover:bg-muted/60 text-foreground";
-          let badgeStyle = "bg-secondary text-secondary-foreground group-hover:bg-primary/20 group-hover:text-primary";
+          let buttonStyle =
+            "border-border bg-card hover:border-primary/50 hover:bg-muted/60 text-foreground";
+          let badgeStyle =
+            "bg-secondary text-secondary-foreground group-hover:bg-primary/20 group-hover:text-primary";
           let statusBadge = null;
 
           if (roundResult) {
@@ -424,7 +469,8 @@ export function BattleArena({
 
             if (isCorrectAnswer) {
               // Neon Green highlight for correct answer
-              buttonStyle = "border-success bg-success/20 text-success ring-2 ring-success/60 shadow-xs font-bold";
+              buttonStyle =
+                "border-success bg-success/20 text-success ring-2 ring-success/60 shadow-xs font-bold";
               badgeStyle = "bg-success text-success-foreground";
               statusBadge = (
                 <span className="ml-auto rounded bg-success px-2 py-0.5 text-[11px] font-black text-success-foreground">
@@ -433,7 +479,8 @@ export function BattleArena({
               );
             } else if (isMyChoice && !isCorrectAnswer) {
               // Crimson Red highlight for user's incorrect choice
-              buttonStyle = "border-destructive bg-destructive/20 text-destructive ring-2 ring-destructive/60 line-through opacity-90";
+              buttonStyle =
+                "border-destructive bg-destructive/20 text-destructive ring-2 ring-destructive/60 line-through opacity-90";
               badgeStyle = "bg-destructive text-destructive-foreground";
               statusBadge = (
                 <span className="ml-auto rounded bg-destructive px-2 py-0.5 text-[11px] font-black text-destructive-foreground no-underline">
@@ -442,11 +489,13 @@ export function BattleArena({
               );
             } else {
               // Other options dimmed during reveal
-              buttonStyle = "border-border/50 bg-card/40 text-muted-foreground opacity-40";
+              buttonStyle =
+                "border-border/50 bg-card/40 text-muted-foreground opacity-40";
               badgeStyle = "bg-muted text-muted-foreground";
             }
           } else if (isSelected) {
-            buttonStyle = "border-primary bg-primary/15 text-foreground ring-2 ring-primary/50 shadow-sm";
+            buttonStyle =
+              "border-primary bg-primary/15 text-foreground ring-2 ring-primary/50 shadow-sm";
             badgeStyle = "bg-primary text-primary-foreground";
             statusBadge = (
               <span className="ml-auto rounded bg-primary/20 px-2 py-0.5 text-[11px] font-extrabold text-primary">
@@ -506,4 +555,3 @@ export function BattleArena({
     </div>
   );
 }
-

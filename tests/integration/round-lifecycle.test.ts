@@ -109,10 +109,10 @@ describe("Round Lifecycle & Early Reveal Integration", () => {
         });
       });
 
-      const hostRound1Promise = new Promise<{ roundNumber: number; question: ClientQuestion }>((resolve) => {
+      const hostRound1Promise = new Promise<{ roundNumber: number; question: ClientQuestion; roundDurationMs?: number }>((resolve) => {
         hostSocket.once("round:start", resolve);
       });
-      const challengerRound1Promise = new Promise<{ roundNumber: number; question: ClientQuestion }>((resolve) => {
+      const challengerRound1Promise = new Promise<{ roundNumber: number; question: ClientQuestion; roundDurationMs?: number }>((resolve) => {
         challengerSocket.once("round:start", resolve);
       });
 
@@ -130,6 +130,8 @@ describe("Round Lifecycle & Early Reveal Integration", () => {
 
       expect(hostRound1.roundNumber).toBe(1);
       expect(challengerRound1.roundNumber).toBe(1);
+      expect(hostRound1.roundDurationMs).toBe(200);
+      expect(challengerRound1.roundDurationMs).toBe(200);
 
       // Track player:answered events
       const hostAnsweredEvents: Array<{ playerId: string }> = [];

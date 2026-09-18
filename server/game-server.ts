@@ -43,7 +43,11 @@ export function createGameServer(options: GameServerOptions = {}) {
     (options.port === 0 ? new RoomManager() : defaultRoomManager);
   const openTdbClient = options.openTdbClient ?? defaultOpenTdbClient;
   const countdownIntervalMs = options.countdownIntervalMs ?? 1000;
-  const roundDurationMs = options.roundDurationMs ?? 15000;
+  const roundDurationMs =
+    options.roundDurationMs ??
+    (process.env.ROUND_DURATION_MS
+      ? parseInt(process.env.ROUND_DURATION_MS, 10)
+      : 15000);
   const earlyRevealDebounceMs = options.earlyRevealDebounceMs ?? 500;
   const roundRevealDurationMs = options.roundRevealDurationMs ?? 4000;
   const disconnectGracePeriodMs = options.disconnectGracePeriodMs ?? 30000;
@@ -236,6 +240,7 @@ export function createGameServer(options: GameServerOptions = {}) {
       startTime: match.roundStartTime,
       isSuddenDeath: match.isSuddenDeath,
       selectedCategory: match.selectedCategory ?? null,
+      roundDurationMs,
     });
 
     const expirationTimer = setTimeout(() => {

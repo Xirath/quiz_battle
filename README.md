@@ -107,6 +107,11 @@ AUTH_GOOGLE_SECRET=""
 
 # Enable Dev Mock Login for local testing
 ENABLE_DEV_MOCK_AUTH=true
+
+# Gameplay Timers (Optional, in milliseconds)
+# ROUND_DURATION_MS=15000
+# BAN_TURN_DURATION_MS=15000
+# CATEGORY_REVEAL_DURATION_MS=5000
 ```
 
 ### 4. Sync Database Schema
